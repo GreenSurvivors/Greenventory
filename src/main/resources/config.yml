@@ -10,6 +10,12 @@ redis:
 # you can also directly set the uri for example like this (directly set values overwrite uri parameter 'though):
 # uri: redis://password1@localhost:6379/database?timeout=60s [&database=database]
 
+# The type of messenger to use for the communication between servers.
+# accepted values are
+# * redis
+# * greensocket
+messenger-type: greensocket
+
 # Whether or not the plugin should query inventories on other server
 # or just move the player to the server with the newest inventory
 query-inventories: true

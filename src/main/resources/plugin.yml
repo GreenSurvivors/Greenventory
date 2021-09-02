@@ -2,12 +2,12 @@ name: ${project.name}
 version: '${minecraft.plugin.version}'
 api-version: '1.13'
 main: de.minebench.syncinv.SyncInv
-softdepend: [OpenInv]
-authors: [Phoenix616]
+softdepend: [OpenInv, GreenSocket]
+authors: [Phoenix616, Schpammer]
 description: ${project.description}
 commands:
    syncinv:
-      aliases: [syncinv]
+      aliases: [syncinv, greenventory]
       description: Plugin command description.
       usage: /<command> [reload]
       permission: SyncInv.command

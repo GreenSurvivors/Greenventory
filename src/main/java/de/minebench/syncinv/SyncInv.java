@@ -11,11 +11,7 @@ import de.minebench.syncinv.listeners.MapCreationListener;
 import de.minebench.syncinv.listeners.PlayerFreezeListener;
 import de.minebench.syncinv.listeners.PlayerJoinListener;
 import de.minebench.syncinv.listeners.PlayerQuitListener;
-import de.minebench.syncinv.messenger.Message;
-import de.minebench.syncinv.messenger.MessageType;
-import de.minebench.syncinv.messenger.PlayerDataQuery;
-import de.minebench.syncinv.messenger.RedisMessenger;
-import de.minebench.syncinv.messenger.ServerMessenger;
+import de.minebench.syncinv.messenger.*;
 import lombok.Getter;
 import org.bukkit.ChatColor;
 import org.bukkit.GameRule;
@@ -98,6 +94,11 @@ public final class SyncInv extends JavaPlugin {
      */
     @Getter
     private ServerMessenger messenger;
+
+    /**
+     * The type of the messenger
+     */
+    private String messengerType;
 
     /**
      * The cache for player data which should only get applied when the player is online
@@ -188,10 +189,18 @@ public final class SyncInv extends JavaPlugin {
             }
         }
         playerDataCache = CacheBuilder.newBuilder().expireAfterWrite(queryTimeout, TimeUnit.SECONDS).build();
-        try {
-            messenger = new RedisMessenger(this);
+
+        if ("redis".equals(messengerType)) {
+            try {
+                messenger = new RedisMessenger(this);
+                messenger.hello();
+            } catch (Exception e) {
+                messenger = null;
+            }
+        } else if ("greensocket".equals(messengerType)) {
+            messenger = new GreenSocketMessenger(this);
             messenger.hello();
-        } catch (Exception e) {
+        } else {
             messenger = null;
         }
 
@@ -290,6 +299,8 @@ public final class SyncInv extends JavaPlugin {
         reloadConfig();
 
         debug = getConfig().getBoolean("debug");
+
+        messengerType = getConfig().getString("messenger-type");
 
         queryInventories = getConfig().getBoolean("query-inventories");
 
