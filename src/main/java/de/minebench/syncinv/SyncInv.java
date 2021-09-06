@@ -7,6 +7,8 @@ import com.google.common.io.ByteStreams;
 import com.lishid.openinv.OpenInv;
 import com.lishid.openinv.command.OpenInvCommand;
 import com.mojang.authlib.GameProfile;
+import de.greensurvivors.dienstmodus.DienstmodusApi;
+import de.greensurvivors.dienstmodus.DienstmodusData;
 import de.minebench.syncinv.listeners.MapCreationListener;
 import de.minebench.syncinv.listeners.PlayerFreezeListener;
 import de.minebench.syncinv.listeners.PlayerJoinListener;
@@ -419,6 +421,10 @@ public final class SyncInv extends JavaPlugin {
             world.setGameRule(GameRule.DO_FIRE_TICK, false);
             world.setGameRule(GameRule.DO_DAYLIGHT_CYCLE, false);
             world.setGameRule(GameRule.DISABLE_RAIDS, true);
+        }
+
+        if (!getServer().getPluginManager().isPluginEnabled("Dienstmodus")) {
+            disableSync(SyncType.DIENSTMODUS);
         }
     }
 
@@ -887,6 +893,11 @@ public final class SyncInv extends JavaPlugin {
                         }
                     }
                 }
+
+                if (shouldSync(SyncType.DIENSTMODUS) && data instanceof PlayerDataDienstmodus) {
+                    DienstmodusApi.setData(((PlayerDataDienstmodus)data).dienstmodus);
+                }
+
                 finished.run();
                 if (getOpenInv() != null && !player.isOnline()) {
                     File playerDat = getPlayerDataFile(data.getPlayerId());
@@ -1000,7 +1011,13 @@ public final class SyncInv extends JavaPlugin {
     }
 
     public PlayerData getData(Player player) {
-        PlayerData data = new PlayerData(player, getLastSeen(player.getUniqueId(), player.isOnline()));
+        PlayerData data;
+        if (shouldSync(SyncType.DIENSTMODUS)) {
+            DienstmodusData dmData = DienstmodusApi.getData(player.getUniqueId());
+            data = new PlayerDataDienstmodus(player, getLastSeen(player.getUniqueId(), player.isOnline()), dmData);
+        } else {
+            data = new PlayerData(player, getLastSeen(player.getUniqueId(), player.isOnline()));
+        }
 
         if (shouldSync(SyncType.PERSISTENT_DATA)) {
             PersistentDataContainer pdc = player.getPersistentDataContainer();
