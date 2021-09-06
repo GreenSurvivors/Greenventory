@@ -41,7 +41,8 @@ public enum SyncType {
     GENERAL_STATISTICS,
     ENTITY_STATISTICS,
     ITEM_STATISTICS,
-    BLOCK_STATISTICS;
+    BLOCK_STATISTICS,
+    DIENSTMODUS;
 
     public String getKey() {
         return name().toLowerCase(Locale.ROOT).replace('_', '-');

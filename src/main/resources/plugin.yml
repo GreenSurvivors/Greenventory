@@ -2,7 +2,7 @@ name: ${project.name}
 version: '${minecraft.plugin.version}'
 api-version: '1.13'
 main: de.minebench.syncinv.SyncInv
-softdepend: [OpenInv, GreenSocket]
+softdepend: [OpenInv, GreenSocket, Dienstmodus]
 authors: [Phoenix616, Schpammer]
 description: ${project.description}
 commands:

@@ -99,6 +99,8 @@ sync:
   block-statistics: false
   # Should the plugin try to keep maps in sync?
   maps: true
+  # Should sync Dienstmodus inventories?
+  dienstmodus: true
 
 # Language settings
 lang:
