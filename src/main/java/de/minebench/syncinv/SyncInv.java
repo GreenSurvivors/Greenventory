@@ -383,6 +383,9 @@ public final class SyncInv extends JavaPlugin {
                 disableSync(SyncType.MAPS);
             }
         }
+        if (!getServer().getPluginManager().isPluginEnabled("Dienstmodus")) {
+            disableSync(SyncType.DIENSTMODUS);
+        }
 
         // Make sure the world "world" exists so that we can store unknown players without issues
         if (storeUnknownPlayers && getServer().getWorld("world") == null && getConfig().getBoolean("create-world")) {
