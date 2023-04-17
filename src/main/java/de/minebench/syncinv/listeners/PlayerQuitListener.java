@@ -11,6 +11,7 @@ import org.bukkit.event.player.PlayerQuitEvent;
 
 import java.util.Map;
 
+
 /*
  * SyncInv
  * Copyright (c) 2021 Max Lee aka Phoenix616 (max@themoep.de)
