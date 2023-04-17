@@ -9,6 +9,7 @@ import com.lishid.openinv.commands.OpenInvCommand;
 import com.mojang.authlib.GameProfile;
 import de.greensurvivors.dienstmodus.DienstmodusApi;
 import de.greensurvivors.dienstmodus.DienstmodusData;
+import de.greensurvivors.dienstmodus.InventoryLoadException;
 import de.minebench.syncinv.listeners.MapCreationListener;
 import de.minebench.syncinv.listeners.PlayerFreezeListener;
 import de.minebench.syncinv.listeners.PlayerJoinListener;
@@ -972,8 +973,15 @@ public final class SyncInv extends JavaPlugin {
     public PlayerData getData(Player player) {
         PlayerData data;
         if (shouldSync(SyncType.DIENSTMODUS)) {
-            DienstmodusData dmData = DienstmodusApi.getData(player.getUniqueId());
-            data = new PlayerDataDienstmodus(player, getLastSeen(player.getUniqueId(), player.isOnline()), dmData);
+            try {
+                DienstmodusData dmData = DienstmodusApi.getData(player.getUniqueId());
+                data = new PlayerDataDienstmodus(player, getLastSeen(player.getUniqueId(), player.isOnline()), dmData);
+            } catch (InventoryLoadException e) {
+                this.getLogger().log(Level.SEVERE, "Couldn't load Dienstmodus data for " + player.getName() + ", uuid: " + player.getUniqueId(), e);
+
+                data = new PlayerData(player, getLastSeen(player.getUniqueId(), player.isOnline()));
+            }
+
         } else {
             data = new PlayerData(player, getLastSeen(player.getUniqueId(), player.isOnline()));
         }

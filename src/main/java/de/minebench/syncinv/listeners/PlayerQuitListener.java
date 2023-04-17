@@ -1,16 +1,17 @@
 package de.minebench.syncinv.listeners;
 
+import de.greensurvivors.dienstmodus.InventoryLoadException;
 import de.minebench.syncinv.PlayerData;
 import de.minebench.syncinv.SyncInv;
 import de.minebench.syncinv.messenger.MessageType;
 import de.minebench.syncinv.messenger.PlayerDataQuery;
+import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerQuitEvent;
 
 import java.util.Set;
-import java.util.UUID;
 
 /*
  * SyncInv
