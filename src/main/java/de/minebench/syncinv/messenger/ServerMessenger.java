@@ -124,6 +124,8 @@ public abstract class ServerMessenger {
                 return;
             }
 
+            plugin.logDebug(playerId + " was last seen on this server at " + query.getLocalLastSeen());
+
             String youngestServer = query.getYoungestServer();
             if (youngestServer == null) { // This is the youngest server
                 queries.remove(query.getPlayerId()); // Let the player play
@@ -218,8 +220,8 @@ public abstract class ServerMessenger {
                     playerId = (UUID) message.read();
                     query = queries.get(playerId);
                     if (query != null) {
-                        plugin.logDebug("Received " + message.getType() + " for " + playerId + " from " + message.getSender() + " targeted at " + target);
                         lastSeen = (long) message.read();
+                        plugin.logDebug("Received " + message.getType() + " " + lastSeen + " for " + playerId + " from " + message.getSender() + " targeted at " + target);
                         query.addResponse(message.getSender(), lastSeen);
 
                         if (isCompleted(query)) { // All known servers responded
@@ -245,7 +247,11 @@ public abstract class ServerMessenger {
                         if (offlinePlayer.hasPlayedBefore()) {
                             Player p = plugin.getOpenInv().loadPlayer(offlinePlayer);
                             if (p != null) {
-                                sendMessage(message.getSender(), MessageType.DATA, plugin.getData(p));
+                                plugin.getOpenInv().retainPlayer(p, plugin);
+                                PlayerData data = plugin.getData(p);
+                                plugin.getOpenInv().releasePlayer(p, plugin);
+                                plugin.getOpenInv().unload(p);
+                                sendMessage(message.getSender(), MessageType.DATA, data);
                             } else {
                                 sendMessage(message.getSender(), MessageType.CANT_GET_DATA, playerId); // Tell the sender that we can't load the data
                             }

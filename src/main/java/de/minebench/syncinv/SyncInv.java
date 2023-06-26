@@ -9,6 +9,7 @@ import com.lishid.openinv.commands.OpenInvCommand;
 import com.mojang.authlib.GameProfile;
 import de.greensurvivors.dienstmodus.DienstmodusApi;
 import de.greensurvivors.dienstmodus.DienstmodusData;
+import de.greensurvivors.dienstmodus.InventoryLoadException;
 import de.minebench.syncinv.listeners.MapCreationListener;
 import de.minebench.syncinv.listeners.PlayerFreezeListener;
 import de.minebench.syncinv.listeners.PlayerJoinListener;
@@ -33,17 +34,21 @@ import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
+import org.bukkit.map.MapCanvas;
+import org.bukkit.map.MapRenderer;
 import org.bukkit.map.MapView;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.scheduler.BukkitTask;
+import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.AbstractMap;
 import java.util.Date;
@@ -221,23 +226,21 @@ public final class SyncInv extends JavaPlugin {
                             OfflinePlayer offlinePlayer = openInv.matchPlayer(args[0]);
                             if (offlinePlayer != null && (offlinePlayer.hasPlayedBefore() || offlinePlayer.isOnline())) {
                                 PlayerDataQuery q = getMessenger().queryData(offlinePlayer.getUniqueId(), (query) -> {
-                                    getServer().getScheduler().runTask(this, () -> {
-                                        if (getServer().getPlayer(query.getPlayerId()) != null) {
-                                            openInvCommand.onCommand(sender, command, label, args);
-                                            return;
-                                        }
-                                        getMessenger().removeQuery(query.getPlayerId());
-                                        if (!((Player) sender).isOnline()) {
-                                            return;
-                                        }
-                                        if (query.getYoungestServer() == null) {
-                                            openInvCommand.onCommand(sender, command, label, args);
-                                        } else {
-                                            sender.sendMessage(ChatColor.RED + "Current server does not have newest player data! "
-                                                    + ChatColor.GRAY + "Connecting to server " + query.getYoungestServer() + " which has the newest data...");
-                                            connectToServer(((Player) sender).getUniqueId(), query.getYoungestServer());
-                                        }
-                                    });
+                                    if (getServer().getPlayer(query.getPlayerId()) != null) {
+                                        openInvCommand.onCommand(sender, command, label, args);
+                                        return;
+                                    }
+                                    getMessenger().removeQuery(query.getPlayerId());
+                                    if (!((Player) sender).isOnline()) {
+                                        return;
+                                    }
+                                    if (query.getYoungestServer() == null) {
+                                        openInvCommand.onCommand(sender, command, label, args);
+                                    } else {
+                                        sender.sendMessage(ChatColor.RED + "Current server does not have newest player data! "
+                                                + ChatColor.GRAY + "Connecting to server " + query.getYoungestServer() + " which has the newest data...");
+                                        connectToServer(((Player) sender).getUniqueId(), query.getYoungestServer());
+                                    }
                                 });
                                 if (q == null) {
                                     sender.sendMessage(ChatColor.RED + "Could not query information from other servers! Take a look at the log for more details.");
@@ -286,10 +289,10 @@ public final class SyncInv extends JavaPlugin {
     @Override
     public void onDisable() {
         disabling = true;
-        for (Player player : getServer().getOnlinePlayers()) {
-            getMessenger().sendGroupMessage(new Message(getMessenger().getServerName(), MessageType.DATA, getData(player)), true);
-        }
         if (getMessenger() != null) {
+            for (Player player : getServer().getOnlinePlayers()) {
+                getMessenger().sendGroupMessage(new Message(getMessenger().getServerName(), MessageType.DATA, getData(player)), true);
+            }
             getMessenger().goodbye();
         }
     }
@@ -359,7 +362,15 @@ public final class SyncInv extends JavaPlugin {
                 try {
                     fieldMapColor = worldMap.getClass().getField("g");
                 } catch (NoSuchFieldException e) {
-                    fieldMapColor = worldMap.getClass().getField("colors");
+                    try {
+                        fieldMapColor = worldMap.getClass().getField("colors");
+                    } catch (NoSuchFieldException e1) {
+                        for (Field field : worldMap.getClass().getFields()) {
+                            if (field.getType() == byte[].class) {
+                                fieldMapColor = field;
+                            }
+                        }
+                    }
                 }
                 fieldMapWorldId = worldMap.getClass().getDeclaredField("uniqueId");
                 fieldMapWorldId.setAccessible(true);
@@ -391,6 +402,10 @@ public final class SyncInv extends JavaPlugin {
             world.setGameRule(GameRule.DO_FIRE_TICK, false);
             world.setGameRule(GameRule.DO_DAYLIGHT_CYCLE, false);
             world.setGameRule(GameRule.DISABLE_RAIDS, true);
+        }
+
+        if (!getServer().getPluginManager().isPluginEnabled("Dienstmodus")) {
+            disableSync(SyncType.DIENSTMODUS);
         }
     }
 
@@ -442,6 +457,18 @@ public final class SyncInv extends JavaPlugin {
                 return System.currentTimeMillis();
             }
         }
+        // Check if lastseen file exists, if so use it
+        File lastSeen = getPlayerLastSeenFile(playerId);
+        if (lastSeen.exists()) {
+            try {
+                String lastSeenString = Files.readString(lastSeen.toPath());
+                logDebug("Lastseen file existed for " + playerId + "! (" + lastSeenString + ")");
+                return Long.parseLong(lastSeenString);
+            } catch (IOException e) {
+                getLogger().log(Level.SEVERE, "Error while reading last seen file for " + playerId + "!", e);
+                return 0;
+            }
+        }
         File playerDat = getPlayerDataFile(playerId);
         return playerDat.lastModified();
     }
@@ -455,7 +482,31 @@ public final class SyncInv extends JavaPlugin {
      */
     public boolean setLastSeen(UUID playerId, long timeStamp) {
         File playerDat = getPlayerDataFile(playerId);
-        return playerDat.exists() && playerDat.setLastModified(timeStamp);
+        if (playerDat.exists()) {
+            File lastSeen = getPlayerLastSeenFile(playerId);
+            if (playerDat.setLastModified(timeStamp)) {
+                if (playerDat.lastModified() == timeStamp) {
+                    // Delete old last seen file if it existed
+                    if (!lastSeen.exists() || lastSeen.delete()) {
+                        return true;
+                    }
+                    logDebug("Unable to remove old last seen file for " + playerId + "?");
+                }
+                logDebug("Set last seen of " + playerId + " to " + timeStamp + " but it didn't work? Using workaround...");
+            } else {
+                logDebug("Unable to set last seen of " + playerId + " to " + timeStamp + "! Using workaround...");
+            }
+            // Workaround for systems that don't allow modifying the dat directly
+            try {
+                Files.write(lastSeen.toPath(), String.valueOf(timeStamp).getBytes(StandardCharsets.UTF_8));
+                return true;
+            } catch (IOException e) {
+                getLogger().log(Level.SEVERE, "Unable to store lastseen file for " + playerId, e);
+            }
+        } else {
+            logDebug("Tried to set last seen of " + playerId + " to " + timeStamp + " but they had no player file stored?");
+        }
+        return false;
     }
 
     /**
@@ -531,8 +582,7 @@ public final class SyncInv extends JavaPlugin {
                 player = getOpenInv().loadPlayer(offlinePlayer);
                 if (player == null) {
                     logDebug("Unable to load player " + offlinePlayer.getName() + "/" + offlinePlayer.getUniqueId() + " data with OpenInv");
-                }
-                if (createdNewFile) {
+                } else if (createdNewFile) {
                     try {
                         if (methodGetHandle == null) {
                             methodGetHandle = player.getClass().getMethod("getHandle");
@@ -572,7 +622,6 @@ public final class SyncInv extends JavaPlugin {
                         getLogger().log(Level.WARNING, "Error while trying to set location of an unknown player. Disabling unknown player storage it!", e);
                         storeUnknownPlayers = false;
                         player = null;
-                        getPlayerDataFile(data.getPlayerId()).delete();
                         getOpenInv().unload(offlinePlayer);
                     }
                 }
@@ -580,6 +629,9 @@ public final class SyncInv extends JavaPlugin {
             if (player == null) {
                 logDebug("Could not apply data for player " + data.getPlayerId() + " as he isn't online and "
                         + (getOpenInv() == null ? "this server doesn't have OpenInv installed!" : "never was online on this server before!"));
+                if (createdNewFile) {
+                    getPlayerDataFile(data.getPlayerId()).delete();
+                }
                 return;
             }
             if (getOpenInv() != null && !player.isOnline()) {
@@ -616,19 +668,32 @@ public final class SyncInv extends JavaPlugin {
                         try {
                             logDebug("Writing data of map " + mapData.getId());
                             MapView map = getServer().getMap(mapData.getId());
-                            Object worldMap = fieldWorldMap.get(map);
-                            map.setCenterX(mapData.getCenterX());
-                            map.setCenterZ(mapData.getCenterZ());
-                            map.setScale(mapData.getScale());
-                            fieldMapColor.set(worldMap, mapData.getColors());
+                            if (map != null) {
+                                Object worldMap = fieldWorldMap.get(map);
+                                map.setCenterX(mapData.getCenterX());
+                                map.setCenterZ(mapData.getCenterZ());
+                                map.setScale(mapData.getScale());
+                                fieldMapColor.set(worldMap, mapData.getColors());
+                                try {
+                                    // Newer map info
+                                    map.setLocked(mapData.isLocked());
+                                    map.setTrackingPosition(mapData.isTrackingPosition());
+                                    map.setUnlimitedTracking(mapData.isUnlimitedTracking());
+                                } catch (NoSuchMethodError ignored) {}
 
-                            if (getServer().getWorld(mapData.getWorldId()) != null) {
-                                map.setWorld(getServer().getWorld(mapData.getWorldId()));
+                                World world = getServer().getWorld(mapData.getWorldId());
+                                if (world != null) {
+                                    map.setWorld(world);
+                                }
+                                fieldMapWorldId.set(worldMap, mapData.getWorldId()); // plugin API doesn't change UUID on world set so set it always
+                                // Workaround for map not showing directly after creating it
+                                forceRender(map);
+                                player.sendMap(map);
                             }
-                            fieldMapWorldId.set(worldMap, mapData.getWorldId()); // plugin API doesn't change UUID on world set so set it always
-                            player.sendMap(map);
                         } catch (IllegalAccessException e) {
                             getLogger().log(Level.SEVERE, "Could not access field in WorldMap class for " + mapData.getId() + "! ", e);
+                        } catch (Exception e) {
+                            getLogger().log(Level.SEVERE, "Error while trying to store map " + mapData.getId() + "! ", e);
                         }
                     }
                 }
@@ -841,7 +906,7 @@ public final class SyncInv extends JavaPlugin {
                         playerDat.delete();
                     } else if (playerDat.lastModified() >= data.getLastSeen()) {
                         // Failed to apply data, make sure our locally stored data is older than the newest
-                        playerDat.setLastModified(data.getLastSeen() - 1);
+                        setLastSeen(data.getPlayerId(), data.getLastSeen() - 1);
                     }
                 }
             } finally {
@@ -851,6 +916,21 @@ public final class SyncInv extends JavaPlugin {
                 }
             }
         });
+    }
+
+    /**
+     * Force a rerender of the map. This is done by adding an empty custom renderer above the vanilla one.
+     * @param map The MapView
+     */
+    private void forceRender(MapView map) {
+        map.addRenderer(new EmptyRenderer());
+    }
+
+    private static class EmptyRenderer extends MapRenderer {
+        @Override
+        public void render(@NotNull MapView map, @NotNull MapCanvas canvas, @NotNull Player player) {
+
+        }
     }
 
     private void cacheData(PlayerData data, Runnable finished) {
@@ -868,6 +948,10 @@ public final class SyncInv extends JavaPlugin {
 
     private File getPlayerDataFile(UUID playerId) {
         return new File(playerDataFolder, playerId + ".dat");
+    }
+
+    private File getPlayerLastSeenFile(UUID playerId) {
+        return new File(playerDataFolder, playerId + ".lastseen");
     }
 
     private boolean createNewEmptyData(UUID playerId) {
@@ -889,8 +973,15 @@ public final class SyncInv extends JavaPlugin {
     public PlayerData getData(Player player) {
         PlayerData data;
         if (shouldSync(SyncType.DIENSTMODUS)) {
-            DienstmodusData dmData = DienstmodusApi.getData(player.getUniqueId());
-            data = new PlayerDataDienstmodus(player, getLastSeen(player.getUniqueId(), player.isOnline()), dmData);
+            try {
+                DienstmodusData dmData = DienstmodusApi.getData(player.getUniqueId());
+                data = new PlayerDataDienstmodus(player, getLastSeen(player.getUniqueId(), player.isOnline()), dmData);
+            } catch (InventoryLoadException e) {
+                this.getLogger().log(Level.SEVERE, "Couldn't load Dienstmodus data for " + player.getName() + ", uuid: " + player.getUniqueId(), e);
+
+                data = new PlayerData(player, getLastSeen(player.getUniqueId(), player.isOnline()));
+            }
+
         } else {
             data = new PlayerData(player, getLastSeen(player.getUniqueId(), player.isOnline()));
         }
@@ -995,14 +1086,21 @@ public final class SyncInv extends JavaPlugin {
                         continue;
                     }
 
-                    data.getMaps().add(new MapData(
+                    MapData mapData = new MapData(
                             map.getId(),
                             worldId,
                             map.getCenterX(),
                             map.getCenterZ(),
                             map.getScale(),
                             colors
-                    ));
+                    );
+                    try {
+                        // Newer map info
+                        mapData.setLocked(map.isLocked());
+                        mapData.setTrackingPosition(map.isTrackingPosition());
+                        mapData.setUnlimitedTracking(map.isUnlimitedTracking());
+                    } catch (NoSuchMethodError ignored) {}
+                    data.getMaps().add(mapData);
                 } catch (IllegalAccessException e) {
                     getLogger().log(Level.SEVERE, "Could not access field in WorldMap class for " + map.getId() + "! ", e);
                 }
@@ -1033,14 +1131,18 @@ public final class SyncInv extends JavaPlugin {
 
     /**
      * Make sure that we have maps with that id
-     * @param id
+     * @param id The map's numeric id
      */
     public void checkMap(int id) {
         setNewestMap(id);
         logDebug("Checking map " + id);
-        while (getServer().getMap(id) == null) {
-            MapView map = getServer().createMap(getServer().getWorlds().get(0));
-            logDebug("Created map " + map.getId());
+        try {
+            while (getServer().getMap(id) == null) {
+                MapView map = getServer().createMap(getServer().getWorlds().get(0));
+                logDebug("Created map " + map.getId());
+            }
+        } catch (Exception e) {
+            getLogger().log(Level.WARNING, "Error while trying to check map " + id + ". It might be corrupted!", e);
         }
     }
 

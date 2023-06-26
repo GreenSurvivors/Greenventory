@@ -1,9 +1,11 @@
 package de.minebench.syncinv.listeners;
 
+import de.greensurvivors.dienstmodus.InventoryLoadException;
 import de.minebench.syncinv.PlayerData;
 import de.minebench.syncinv.SyncInv;
 import de.minebench.syncinv.messenger.MessageType;
 import de.minebench.syncinv.messenger.PlayerDataQuery;
+import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -64,6 +66,8 @@ public class PlayerQuitListener implements Listener {
                 plugin.getMessenger().fulfillQueuedDataRequest(data);
             }
         }
+        // Update last seen
+        plugin.runLater(() -> plugin.setLastSeen(event.getPlayer().getUniqueId(), System.currentTimeMillis()), 1);
     }
 
 }
