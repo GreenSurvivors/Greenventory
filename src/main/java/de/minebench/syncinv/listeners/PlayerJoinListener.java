@@ -8,6 +8,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.AsyncPlayerPreLoginEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.Map;
 
@@ -32,12 +33,12 @@ import java.util.Map;
 public class PlayerJoinListener implements Listener {
     private final SyncInv plugin;
 
-    public PlayerJoinListener(SyncInv plugin) {
+    public PlayerJoinListener(@NotNull SyncInv plugin) {
         this.plugin = plugin;
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
-    public void onPlayerPreLogin(AsyncPlayerPreLoginEvent e) {
+    public void onPlayerPreLogin(@NotNull AsyncPlayerPreLoginEvent e) {
         if (e.getLoginResult() == AsyncPlayerPreLoginEvent.Result.ALLOWED) {
             if (plugin.getMessenger() == null) {
                 e.setLoginResult(AsyncPlayerPreLoginEvent.Result.KICK_OTHER);
@@ -53,7 +54,7 @@ public class PlayerJoinListener implements Listener {
     }
 
     @EventHandler(priority = EventPriority.LOWEST)
-    public void onPlayerJoined(PlayerJoinEvent e) {
+    private void onPlayerJoined(PlayerJoinEvent e) {
         Map.Entry<PlayerData, Runnable> cached = plugin.getCachedData(e.getPlayer());
         if (cached != null && plugin.getLastSeen(e.getPlayer().getUniqueId(), false) < cached.getKey().lastSeen()) {
             plugin.removeCachedData(e.getPlayer());

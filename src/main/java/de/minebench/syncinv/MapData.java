@@ -19,9 +19,10 @@ package de.minebench.syncinv;
  */
 
 import org.bukkit.map.MapView;
+import org.jetbrains.annotations.NotNull;
 
 import java.io.Serializable;
 import java.util.UUID;
 
-public record MapData(int id, UUID worldId, int centerX, int centerZ, MapView.Scale scale, byte[] colors,
+public record MapData(int id, @NotNull UUID worldId, int centerX, int centerZ, @NotNull MapView.Scale scale, byte @NotNull [] colors,
                       boolean locked, boolean trackingPosition, boolean unlimitedTracking) implements Serializable { }

@@ -8,6 +8,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerLoginEvent;
+import org.jetbrains.annotations.NotNull;
 
 /*
  * SyncInv
@@ -30,7 +31,7 @@ import org.bukkit.event.player.PlayerLoginEvent;
 public class PlayerLoginListener implements Listener {
     private final SyncInv plugin;
 
-    public PlayerLoginListener(SyncInv plugin) {
+    public PlayerLoginListener(@NotNull SyncInv plugin) {
         this.plugin = plugin;
     }
 

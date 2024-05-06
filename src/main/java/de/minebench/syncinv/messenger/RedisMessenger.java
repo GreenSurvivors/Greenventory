@@ -11,6 +11,8 @@ import io.lettuce.core.pubsub.RedisPubSubListener;
 import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
 import io.lettuce.core.pubsub.api.async.RedisPubSubAsyncCommands;
 import org.bukkit.configuration.InvalidConfigurationException;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -36,12 +38,12 @@ import java.util.logging.Level;
  */
 
 public class RedisMessenger extends ServerMessenger {
-    private final RedisClient client;
-    private StatefulRedisConnection<String, byte[]> connection;
-    private static final String CHANNEL_PREFIX = "syncinv:";
-    private static final String VERSION_PREFIX = Message.VERSION + ":";
+    private final @NotNull RedisClient client;
+    private @Nullable StatefulRedisConnection<String, byte[]> connection;
+    private static final @NotNull String CHANNEL_PREFIX = "syncinv:";
+    private static final @NotNull String VERSION_PREFIX = Message.VERSION + ":";
 
-    public RedisMessenger(SyncInv plugin) {
+    public RedisMessenger(@NotNull SyncInv plugin) {
         super(plugin);
         RedisURI uri = new RedisURI();
         if (plugin.getConfig().isSet("redis.uri")) {
@@ -64,7 +66,7 @@ public class RedisMessenger extends ServerMessenger {
         StatefulRedisPubSubConnection<String, byte[]> connection = client.connectPubSub(new StringByteArrayCodec());
         connection.addListener(new RedisPubSubListener<String, byte[]>() {
             @Override
-            public void message(String channel, byte[] bytes) {
+            public void message(@NotNull String channel, byte @NotNull [] bytes) {
                 if (!channel.startsWith(CHANNEL_PREFIX)) {
                     plugin.getLogger().log(Level.WARNING, "Received a message on " + channel + " even 'though it doesn't belong to our plugin? ");
                     return;
@@ -115,7 +117,7 @@ public class RedisMessenger extends ServerMessenger {
     }
 
     @Override
-    protected void sendMessageImplementation(String target, Message message, boolean sync) {
+    protected void sendMessageImplementation(@NotNull String target, @NotNull Message message, boolean sync) {
         if (connection == null || !connection.isOpen()) {
             connection = client.connect(new StringByteArrayCodec());
         }
@@ -126,28 +128,28 @@ public class RedisMessenger extends ServerMessenger {
         }
     }
 
-    private class StringByteArrayCodec implements RedisCodec<String, byte[]> {
+    private class StringByteArrayCodec implements RedisCodec<String, byte @NotNull []> {
 
-        private final StringCodec stringCodec = new StringCodec();
-        private final ByteArrayCodec byteArrayCodec = new ByteArrayCodec();
+        private final @NotNull StringCodec stringCodec = new StringCodec();
+        private final @NotNull ByteArrayCodec byteArrayCodec = new ByteArrayCodec();
 
         @Override
-        public String decodeKey(ByteBuffer bytes) {
+        public String decodeKey(@NotNull ByteBuffer bytes) {
             return stringCodec.decodeKey(bytes);
         }
 
         @Override
-        public byte[] decodeValue(ByteBuffer bytes) {
+        public byte @NotNull [] decodeValue(@NotNull ByteBuffer bytes) {
             return byteArrayCodec.decodeValue(bytes);
         }
 
         @Override
-        public ByteBuffer encodeKey(String key) {
+        public @NotNull ByteBuffer encodeKey(@Nullable String key) {
             return stringCodec.encodeKey(key);
         }
 
         @Override
-        public ByteBuffer encodeValue(byte[] value) {
+        public @NotNull ByteBuffer encodeValue(byte @Nullable [] value) {
             return byteArrayCodec.encodeValue(value);
         }
     }

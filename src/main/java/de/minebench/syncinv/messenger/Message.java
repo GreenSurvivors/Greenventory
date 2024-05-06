@@ -21,6 +21,8 @@ package de.minebench.syncinv.messenger;
 import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.util.io.BukkitObjectInputStream;
 import org.bukkit.util.io.BukkitObjectOutputStream;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -33,10 +35,10 @@ import java.util.Queue;
 
 public class Message {
     public static final int VERSION = 4;
-    private final String sender;
+    private final @NotNull String sender;
     private final long id;
     private final MessageType type;
-    private final Queue<Object> data = new ArrayDeque<>();
+    private final @NotNull Queue<Object> data = new ArrayDeque<>();
 
     /**
      * A Message of a certain type. Optionally with some data
@@ -46,7 +48,7 @@ public class Message {
      * @param objects   The data, in the order that it should be sent
      * @throws IllegalArgumentException when the amount of Objects given didn't match the MessageType requirements
      */
-    public Message(String sender, long id, MessageType type, Object... objects) {
+    public Message(@NotNull String sender, long id, @NotNull MessageType type, Object... objects) {
         if (objects.length < type.getArgCount()) {
             throw new IllegalArgumentException(type + " requires at least " + type.getArgCount() + " arguments. Only " + objects.length + " were given!");
         }
@@ -92,9 +94,9 @@ public class Message {
 
     /**
      * Read the first object in this message
-     * @return The first object
+     * @return The first object or null if the queue was empty
      */
-    public Object read() {
+    public @Nullable Object read() {
         return data.poll();
     }
 
@@ -105,7 +107,7 @@ public class Message {
      *                  of data being sent and each data object);
      *                  an empty one if an error occurred
      */
-    public byte[] toByteArray() {
+    public byte @NotNull [] toByteArray() {
         try (ByteArrayOutputStream bos = new ByteArrayOutputStream();
              ObjectOutput out = new BukkitObjectOutputStream(bos)) {
             out.writeInt(VERSION);
@@ -134,7 +136,7 @@ public class Message {
      * @throws InvalidConfigurationException    If the data is invalid
      * @throws VersionMismatchException         If the received message is of a different version than it can accept
      */
-    public static Message fromByteArray(byte[] bytes) throws IOException, IllegalArgumentException, ClassNotFoundException, InvalidConfigurationException, VersionMismatchException {
+    public static @NotNull Message fromByteArray(byte @NotNull [] bytes) throws IOException, IllegalArgumentException, ClassNotFoundException, InvalidConfigurationException, VersionMismatchException {
         try (ByteArrayInputStream bis = new ByteArrayInputStream(bytes);
              ObjectInput in = new BukkitObjectInputStream(bis)) {
             int version = in.readInt();

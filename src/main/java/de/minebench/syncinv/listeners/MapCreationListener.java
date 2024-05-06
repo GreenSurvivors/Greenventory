@@ -12,6 +12,7 @@ import org.bukkit.event.server.MapInitializeEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.MapMeta;
 import org.bukkit.map.MapView;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.UUID;
 
@@ -34,21 +35,21 @@ import java.util.UUID;
  */
 
 public class MapCreationListener implements Listener {
-    private final SyncInv plugin;
+    private final @NotNull SyncInv plugin;
 
-    public MapCreationListener(SyncInv plugin) {
+    public MapCreationListener(@NotNull SyncInv plugin) {
         this.plugin = plugin;
     }
 
     @EventHandler
-    public void onMapCreation(MapInitializeEvent event) {
+    public void onMapCreation(@NotNull MapInitializeEvent event) {
         if (plugin.shouldSync(SyncType.MAPS)) {
             plugin.setNewestMap(event.getMap().getId());
         }
     }
 
     @EventHandler
-    public void onMapScale(PrepareItemCraftEvent event) {
+    public void onMapScale(@NotNull PrepareItemCraftEvent event) {
         if (event.getInventory().getResult() != null && event.getInventory().getResult().getType() == Material.FILLED_MAP && event.getInventory().getResult().getAmount() != 2) {
             plugin.logDebug(event.getView().getPlayer() + " is trying to scale a map!");
             for (ItemStack item : event.getInventory().getMatrix()) {

@@ -8,6 +8,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.Map;
 
@@ -30,14 +31,14 @@ import java.util.Map;
  */
 
 public class PlayerQuitListener implements Listener {
-    private final SyncInv plugin;
+    private final @NotNull SyncInv plugin;
 
-    public PlayerQuitListener(SyncInv plugin) {
+    public PlayerQuitListener(@NotNull SyncInv plugin) {
         this.plugin = plugin;
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
-    public void onPlayerQuit(PlayerQuitEvent event) {
+    private void onPlayerQuit(@NotNull PlayerQuitEvent event) {
         if (plugin.getMessenger() == null) {
             return;
         }

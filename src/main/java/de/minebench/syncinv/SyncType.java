@@ -1,5 +1,7 @@
 package de.minebench.syncinv;
 
+import org.jetbrains.annotations.NotNull;
+
 import java.util.Locale;
 
 /*
@@ -43,7 +45,7 @@ public enum SyncType {
     ITEM_STATISTICS,
     BLOCK_STATISTICS;
 
-    public String getKey() {
+    public @NotNull String getKey() {
         return name().toLowerCase(Locale.ROOT).replace('_', '-');
     }
 }

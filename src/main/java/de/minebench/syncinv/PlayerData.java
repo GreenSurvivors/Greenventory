@@ -30,6 +30,8 @@ import org.bukkit.inventory.meta.MapMeta;
 import org.bukkit.map.MapView;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.util.Vector;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.Serializable;
 import java.util.Collection;
@@ -39,16 +41,18 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-public record PlayerData(long timeStamp, int dataVersion, UUID playerId, String playerName, GameMode gamemode,
-                         int totalExperience, int level, float exp, byte[][] inventory, byte[][] enderchest,
-                         Collection<PotionEffect> potionEffects, Set<MapData> maps, double maxHealth, double health,
-                         boolean isHealthScaled, double healthScale, int foodLevel, float saturation, float exhaustion,
-                         int maxAir, int remainingAir, int fireTicks, int maxNoDamageTicks, int noDamageTicks,
-                         float fallDistance, Vector velocity, int heldItemSlot, byte[] persistentData,
-                         Map<String, Map<String, Long>> advancementProgress,
-                         Table<Statistic, String, Integer> statistics, long lastSeen) implements Serializable {
+public record PlayerData(long timeStamp, int dataVersion, @NotNull UUID playerId, @NotNull String playerName, GameMode gamemode,
+                         int totalExperience, int level, float exp,
+                         byte @NotNull [] @Nullable [] inventory, byte @NotNull [] @Nullable [] enderchest,
+                         @NotNull Collection<@NotNull PotionEffect> potionEffects, @NotNull Set<@NotNull MapData> maps,
+                         double maxHealth, double health, boolean isHealthScaled, double healthScale, int foodLevel,
+                         float saturation, float exhaustion, int maxAir, int remainingAir, int fireTicks,
+                         int maxNoDamageTicks, int noDamageTicks, float fallDistance, @NotNull Vector velocity,
+                         int heldItemSlot, byte @Nullable [] persistentData,
+                         @NotNull Map<@NotNull String, @NotNull Map<@NotNull String, @NotNull Long>> advancementProgress,
+                         @NotNull Table<Statistic, @NotNull String, @NotNull Integer> statistics, long lastSeen) implements Serializable {
 
-    public static PlayerData create(Player player, long lastSeen, byte[] persistentData) {
+    public static PlayerData create(final @NotNull Player player, final long lastSeen, final byte @Nullable [] persistentData) {
         return new PlayerData(
                 System.currentTimeMillis(),
                 player.getServer().getUnsafe().getDataVersion(),
@@ -84,15 +88,15 @@ public record PlayerData(long timeStamp, int dataVersion, UUID playerId, String 
         );
     }
 
-    public ItemStack[] getInventoryContents() {
+    public @Nullable ItemStack @NotNull [] getInventoryContents() {
         return deserializeItems(inventory);
     }
 
-    public ItemStack[] getEnderchestContents() {
+    public @Nullable ItemStack @NotNull [] getEnderchestContents() {
         return deserializeItems(enderchest);
     }
 
-    private static byte[][] serializeItems(ItemStack[] items) {
+    private static byte @NotNull [] @Nullable [] serializeItems(@Nullable ItemStack @NotNull[] items) {
         byte[][] itemByteArray = new byte[items.length][];
         for (int i = 0; i < items.length; i++) {
             ItemStack item = items[i];
@@ -101,7 +105,7 @@ public record PlayerData(long timeStamp, int dataVersion, UUID playerId, String 
         return itemByteArray;
     }
 
-    private static ItemStack[] deserializeItems(byte[][] items) {
+    private static @Nullable ItemStack @NotNull [] deserializeItems(byte @NotNull [] @Nullable [] items) {
         ItemStack[] itemsArray = new ItemStack[items.length];
         for (int i = 0; i < items.length; i++) {
             byte[] itemBytes = items[i];
@@ -115,7 +119,7 @@ public record PlayerData(long timeStamp, int dataVersion, UUID playerId, String 
      * @param items The items (e.g. from an inventory) to get the maps
      * @return A map of IDs to MapView
      */
-    public static Map<? extends Integer, ? extends MapView> getMapIds(ItemStack[] items) {
+    public static @NotNull Map<? extends @NotNull Integer, ? extends @Nullable MapView> getMapIds(final @Nullable ItemStack @NotNull [] items) {
         Map<Integer, MapView> maps = new HashMap<>();
         for (ItemStack item : items) {
             if (item != null && item.getType() == Material.FILLED_MAP) {

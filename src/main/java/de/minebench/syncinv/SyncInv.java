@@ -40,7 +40,9 @@ import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.scheduler.BukkitTask;
+import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
 import java.io.IOException;
@@ -95,7 +97,7 @@ public final class SyncInv extends JavaPlugin {
     /**
      * Reference to the OpenInv plugin to load data for the query option
      */
-    private OpenInv openInv = null;
+    private @Nullable OpenInv openInv = null;
 
     /**
      * The messenger for communications between the servers
@@ -105,7 +107,7 @@ public final class SyncInv extends JavaPlugin {
     /**
      * The cache for player data which should only get applied when the player is online
      */
-    private Cache<UUID, Map.Entry<PlayerData, Runnable>> playerDataCache;
+    private Cache<@NotNull UUID, Map.Entry<@NotNull PlayerData, @NotNull Runnable>> playerDataCache;
 
     /**
      * Sync data with all servers in a group when a player logs out
@@ -135,12 +137,12 @@ public final class SyncInv extends JavaPlugin {
     /**
      * The statistics filter mode
      */
-    private FilterMode statisticsFilterMode = FilterMode.DENY;
+    private @NotNull FilterMode statisticsFilterMode = FilterMode.DENY;
 
     /**
      * The statistics filter list
      */
-    private Set<Statistic> statisticsFilter = new HashSet<>();
+    private @NotNull Set<@NotNull Statistic> statisticsFilter = new HashSet<>();
 
     /**
      * Whether or not the plugin is currently disabling
@@ -315,7 +317,8 @@ public final class SyncInv extends JavaPlugin {
      * @param syncType The type to check
      * @return Whether or not it should be synced
      */
-    public boolean shouldSync(SyncType syncType) {
+    @Contract(pure = true)
+    public boolean shouldSync(@NotNull SyncType syncType) {
         return enabledSyncTypes.contains(syncType);
     }
 
@@ -324,7 +327,7 @@ public final class SyncInv extends JavaPlugin {
      * @param syncTypes The types to check
      * @return Whether or not it should be synced
      */
-    public boolean shouldSyncAny(SyncType... syncTypes) {
+    public boolean shouldSyncAny(@NotNull SyncType... syncTypes) {
         for (SyncType syncType : syncTypes) {
             if (shouldSync(syncType)) {
                 return true;
@@ -333,7 +336,7 @@ public final class SyncInv extends JavaPlugin {
         return false;
     }
 
-    private boolean disableSync(SyncType syncType) {
+    private boolean disableSync(@NotNull SyncType syncType) {
         return enabledSyncTypes.remove(syncType);
     }
 
@@ -447,7 +450,8 @@ public final class SyncInv extends JavaPlugin {
         }
     }
 
-    public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
+    @Override
+    public boolean onCommand(@NotNull CommandSender sender, @NotNull Command cmd, @NotNull String label, @NotNull String @NotNull [] args) {
         if (args.length > 0) {
             if ("reload".equalsIgnoreCase(args[0]) && sender.hasPermission("syncing.command.reload")) {
                 loadConfig();
@@ -462,9 +466,10 @@ public final class SyncInv extends JavaPlugin {
      * Get a language message from the config and replace variables in it
      * @param key          The key of the message (lang.<key>)
      * @param replacements An array of variables to be replaced with certain strings in the format [var,repl,var,repl,...]
-     * @return The message string with colorcodes and variables replaced
+     * @return The message string with colorcodes and variables replaced;
+     * or a fallback message informing about the lookup failure
      */
-    public String getLang(String key, String... replacements) {
+    public @NotNull String getLang(@NotNull String key, @NotNull String... replacements) {
         String msg = ChatColor.translateAlternateColorCodes('&', getConfig().getString("lang." + key, getName() + ": &cMissing language key &6" + key));
         for (int i = 0; i + 1 < replacements.length; i += 2) {
             msg = msg.replace("%" + replacements[i] + "%", replacements[i + 1]);
@@ -477,7 +482,8 @@ public final class SyncInv extends JavaPlugin {
      * @param playerId The UUID of the player
      * @return true if it is locked; false if not
      */
-    public boolean isLocked(UUID playerId) {
+    @Contract(pure = true)
+    public boolean isLocked(@NotNull UUID playerId) {
         return getMessenger() == null || getMessenger().hasQuery(playerId);
     }
 
@@ -488,7 +494,7 @@ public final class SyncInv extends JavaPlugin {
      * @return          The timestamp of his last known data on the server in milliseconds;
      *                  0 if the file doesn't exist or an error occurs. (Take a look at {File#lastModified})
      */
-    public long getLastSeen(UUID playerId, boolean online) {
+    public long getLastSeen(@NotNull UUID playerId, boolean online) {
         if (online) {
             Player player = getServer().getPlayer(playerId);
             if (player != null && player.isOnline()) {
@@ -518,7 +524,7 @@ public final class SyncInv extends JavaPlugin {
      *                  milliseconds.
      * @return          true if the time was successfully set
      */
-    public boolean setLastSeen(UUID playerId, long timeStamp) {
+    public boolean setLastSeen(@NotNull UUID playerId, long timeStamp) {
         File playerDat = getPlayerDataFile(playerId);
         if (playerDat.exists()) {
             File lastSeen = getPlayerLastSeenFile(playerId);
@@ -573,7 +579,7 @@ public final class SyncInv extends JavaPlugin {
      * @param playerId The UUID of the player
      * @param server   The name of the server
      */
-    public void connectToServer(UUID playerId, String server) {
+    public void connectToServer(@NotNull UUID playerId, @NotNull String server) {
         Player player = getServer().getPlayer(playerId);
         if (player != null && player.isOnline()) {
             ByteArrayDataOutput out = ByteStreams.newDataOutput();
@@ -587,7 +593,7 @@ public final class SyncInv extends JavaPlugin {
      * Apply a PlayerData object to its player
      * @param data  The data to apply
      */
-    public void applyData(PlayerData data, Runnable finished) {
+    public void applyData(@Nullable PlayerData data, @NotNull Runnable finished) {
         if (data == null)
             return;
 
@@ -712,12 +718,7 @@ public final class SyncInv extends JavaPlugin {
                 if (shouldSync(SyncType.ENDERCHEST))
                     player.getEnderChest().setContents(data.getEnderchestContents());
                 if (shouldSync(SyncType.GAMEMODE)) {
-                    if (data.gamemode() != null) {
-                        player.setGameMode(data.gamemode());
-                    } else {
-                        getLogger().log(Level.WARNING, "Data of " + player.getName() + " did not contain gamemode! Setting it to server default " + getServer().getDefaultGameMode());
-                        player.setGameMode(getServer().getDefaultGameMode());
-                    }
+                    player.setGameMode(data.gamemode());
                 }
                 if (shouldSync(SyncType.HEALTH)) {
                     player.setMaxHealth(data.maxHealth());
@@ -914,7 +915,7 @@ public final class SyncInv extends JavaPlugin {
      * @param statistic The statistic to check
      * @return Whether it should be synced
      */
-    private boolean shouldBeSynced(Statistic statistic) {
+    private boolean shouldBeSynced(@NotNull Statistic statistic) {
         if (statisticsFilter.contains(statistic)) {
             return statisticsFilterMode == FilterMode.ALLOW;
         }
@@ -925,7 +926,7 @@ public final class SyncInv extends JavaPlugin {
      * Force a rerender of the map. This is done by adding an empty custom renderer above the vanilla one.
      * @param map The MapView
      */
-    private void forceRender(MapView map) {
+    private void forceRender(@NotNull MapView map) {
         map.addRenderer(new EmptyRenderer());
     }
 
@@ -952,7 +953,7 @@ public final class SyncInv extends JavaPlugin {
         }
     }
 
-    private void cacheData(PlayerData data, Runnable finished) {
+    private void cacheData(@NotNull PlayerData data, @NotNull Runnable finished) {
         playerDataCache.put(data.playerId(), new AbstractMap.SimpleEntry<>(data, finished));
     }
 
@@ -961,7 +962,7 @@ public final class SyncInv extends JavaPlugin {
      * @param player    The player to get the data for
      * @return A cache entry containing the PlayerData and the notification Runnable when applied successfully
      */
-    public Map.Entry<PlayerData, Runnable> getCachedData(Player player) {
+    public @Nullable Map.Entry<@NotNull PlayerData, @NotNull Runnable> getCachedData(Player player) {
         return playerDataCache.getIfPresent(player.getUniqueId());
     }
 
@@ -969,19 +970,19 @@ public final class SyncInv extends JavaPlugin {
      * Remove the cached data of a player
      * @param player   The player to remove the data for
      */
-    public void removeCachedData(Player player) {
+    public void removeCachedData(@NotNull Player player) {
         playerDataCache.invalidate(player.getUniqueId());
     }
 
-    private File getPlayerDataFile(UUID playerId) {
+    private File getPlayerDataFile(@NotNull UUID playerId) {
         return new File(playerDataFolder, playerId + ".dat");
     }
 
-    private File getPlayerLastSeenFile(UUID playerId) {
+    private File getPlayerLastSeenFile(@NotNull UUID playerId) {
         return new File(playerDataFolder, playerId + ".lastseen");
     }
 
-    private boolean createNewEmptyData(UUID playerId) {
+    private boolean createNewEmptyData(@NotNull UUID playerId) {
         File playerDat = getPlayerDataFile(playerId);
         if (playerDat.exists()) {
             return false;
@@ -997,7 +998,7 @@ public final class SyncInv extends JavaPlugin {
         return false;
     }
 
-    public PlayerData getData(Player player) {
+    public @NotNull PlayerData getData(@NotNull Player player) {
         byte[] persistentData = null;
         if (shouldSync(SyncType.PERSISTENT_DATA)) {
             PersistentDataContainer pdc = player.getPersistentDataContainer();
@@ -1126,7 +1127,7 @@ public final class SyncInv extends JavaPlugin {
      * The sound to play when a player gets unlocked, should match the vanilla levelup
      * @param playerId  The uuid of the Player to play the sound to
      */
-    public void playLoadSound(UUID playerId) {
+    public void playLoadSound(@NotNull UUID playerId) {
         Player player = getServer().getPlayer(playerId);
         if (player != null) {
             playLoadSound(player);
@@ -1137,7 +1138,7 @@ public final class SyncInv extends JavaPlugin {
      * The sound to play when a player gets unlocked, should match the vanilla levelup
      * @param player    The Player to play the sound to
      */
-    public void playLoadSound(Player player) {
+    public void playLoadSound(@NotNull Player player) {
         player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 0.7f, 1);
     }
 
@@ -1161,7 +1162,7 @@ public final class SyncInv extends JavaPlugin {
     /**
      * Make sure that a task runs on the primary thread
      */
-    public void runSync(Runnable run) {
+    public void runSync(@NotNull Runnable run) {
         if (getServer().isPrimaryThread() || disabling) {
             run.run();
         } else {
@@ -1172,7 +1173,7 @@ public final class SyncInv extends JavaPlugin {
     /**
      * Make sure that a task does not run on the primary thread
      */
-    public void runAsync(Runnable run) {
+    public void runAsync(@NotNull Runnable run) {
         if (!getServer().isPrimaryThread() && !disabling) {
             getServer().getScheduler().runTaskAsynchronously(this, run);
         } else {
@@ -1180,11 +1181,11 @@ public final class SyncInv extends JavaPlugin {
         }
     }
 
-    public BukkitTask runLater(Runnable runnable, int delay) {
+    public @NotNull BukkitTask runLater(@NotNull Runnable runnable, int delay) {
         return getServer().getScheduler().runTaskLater(this, runnable, delay);
     }
 
-    public void sendMessage(UUID playerId, String key) {
+    public void sendMessage(@NotNull UUID playerId, @NotNull String key) {
         runSync(() -> {
             Player player = getServer().getPlayer(playerId);
             if (player != null) {
@@ -1193,7 +1194,7 @@ public final class SyncInv extends JavaPlugin {
         });
     }
 
-    public void kick(UUID playerId, String key) {
+    public void kick(@NotNull UUID playerId, @NotNull String key) {
         runSync(() -> {
             Player player = getServer().getPlayer(playerId);
             if (player != null) {
@@ -1202,7 +1203,7 @@ public final class SyncInv extends JavaPlugin {
         });
     }
 
-    public void logDebug(String message) {
+    public void logDebug(@NotNull String message) {
         if (debug) {
             getLogger().log(Level.INFO, "Debug: " + message);
         }
@@ -1215,7 +1216,8 @@ public final class SyncInv extends JavaPlugin {
         }
     }
 
-    public UUID getWorldId(MapView map) {
+    @Contract("null -> null")
+    public @Nullable UUID getWorldId(@Nullable MapView map) {
         if (map == null) {
             return null;
         }

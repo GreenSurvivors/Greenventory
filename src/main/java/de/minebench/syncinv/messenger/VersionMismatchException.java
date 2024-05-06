@@ -1,5 +1,7 @@
 package de.minebench.syncinv.messenger;
 
+import org.jetbrains.annotations.NotNull;
+
 /*
  * SyncInv
  * Copyright (c) 2021 Max Lee aka Phoenix616 (max@themoep.de)
@@ -21,7 +23,7 @@ class VersionMismatchException extends Exception {
     private final int receivedVersion;
     private final int supportedVersion;
 
-    public VersionMismatchException(int receivedVersion, int supportedVersion, String message) {
+    public VersionMismatchException(int receivedVersion, int supportedVersion, @NotNull String message) {
         super(message);
         this.receivedVersion = receivedVersion;
         this.supportedVersion = supportedVersion;

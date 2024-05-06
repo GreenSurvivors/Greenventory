@@ -19,6 +19,7 @@ import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerExpChangeEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
+import org.jetbrains.annotations.NotNull;
 
 /*
  * SyncInv
@@ -39,14 +40,14 @@ import org.bukkit.event.player.PlayerMoveEvent;
  */
 
 public class PlayerFreezeListener implements Listener {
-    private final SyncInv plugin;
+    private final @NotNull SyncInv plugin;
 
-    public PlayerFreezeListener(SyncInv plugin) {
+    public PlayerFreezeListener(@NotNull SyncInv plugin) {
         this.plugin = plugin;
     }
 
     @EventHandler(ignoreCancelled = true)
-    public void onDropItem(PlayerDropItemEvent e) {
+    private void onDropItem(@NotNull PlayerDropItemEvent e) {
         if(plugin.isLocked(e.getPlayer().getUniqueId())) {
             e.setCancelled(true);
             e.getPlayer().sendMessage(plugin.getLang("cant-drop-items"));
@@ -54,7 +55,7 @@ public class PlayerFreezeListener implements Listener {
     }
 
     @EventHandler(ignoreCancelled = true)
-    public void onPlayerMove(PlayerMoveEvent e) {
+    private void onPlayerMove(@NotNull PlayerMoveEvent e) {
         if(!sameBlock(e.getFrom(), e.getTo()) && plugin.isLocked(e.getPlayer().getUniqueId())) {
             e.setCancelled(true);
             if (e.getFrom().getBlockY() == e.getTo().getBlockY()) {
@@ -65,20 +66,20 @@ public class PlayerFreezeListener implements Listener {
         }
     }
 
-    private boolean sameBlock(Location from, Location to) {
+    private boolean sameBlock(@NotNull Location from, @NotNull Location to) {
         return from.getBlockX() == to.getBlockX() && from.getBlockY() == to.getBlockY() && from.getBlockZ() == to.getBlockZ();
     }
 
     @EventHandler(ignoreCancelled = true)
-    public void onPlayerPickupItem(EntityPickupItemEvent e) {
-        if (e.getEntity() instanceof Player && plugin.isLocked(e.getEntity().getUniqueId())) {
+    private void onPlayerPickupItem(@NotNull EntityPickupItemEvent e) {
+        if(e.getEntity() instanceof Player && plugin.isLocked(e.getEntity().getUniqueId())) {
             e.setCancelled(true);
             e.getEntity().sendMessage(plugin.getLang("cant-pickup-items"));
         }
     }
 
     @EventHandler(ignoreCancelled = true)
-    public void onPlayerPickupExp(PlayerExpChangeEvent e) {
+    private void onPlayerPickupExp(PlayerExpChangeEvent e) {
         if(plugin.isLocked(e.getPlayer().getUniqueId())) {
             e.setAmount(0);
             e.getPlayer().sendMessage(plugin.getLang("cant-pickup-exp"));
@@ -86,7 +87,7 @@ public class PlayerFreezeListener implements Listener {
     }
 
     @EventHandler(ignoreCancelled = true)
-    public void onPlayerDamage(EntityDamageEvent e) {
+    private void onPlayerDamage(EntityDamageEvent e) {
         if(e.getEntity() instanceof Player && plugin.isLocked(e.getEntity().getUniqueId())) {
             e.setCancelled(true);
         }
@@ -100,7 +101,7 @@ public class PlayerFreezeListener implements Listener {
     }
 
     @EventHandler(ignoreCancelled = true)
-    public void onInventoryInteraction(InventoryClickEvent e) {
+    private void onInventoryInteraction(InventoryClickEvent e) {
         if(plugin.isLocked(e.getWhoClicked().getUniqueId())) {
             e.setCancelled(true);
             e.getWhoClicked().sendMessage(plugin.getLang("wait-for-loading"));
@@ -108,7 +109,7 @@ public class PlayerFreezeListener implements Listener {
     }
 
     @EventHandler(ignoreCancelled = true)
-    public void onInventoryInteraction(InventoryDragEvent e) {
+    private void onInventoryInteraction(InventoryDragEvent e) {
         if(plugin.isLocked(e.getWhoClicked().getUniqueId())) {
             e.setCancelled(true);
             e.getWhoClicked().sendMessage(plugin.getLang("wait-for-loading"));
@@ -116,7 +117,7 @@ public class PlayerFreezeListener implements Listener {
     }
 
     @EventHandler(ignoreCancelled = true)
-    public void onInventoryInteraction(InventoryOpenEvent e) {
+    private void onInventoryInteraction(InventoryOpenEvent e) {
         if(plugin.isLocked(e.getPlayer().getUniqueId())) {
             e.setCancelled(true);
             e.getPlayer().sendMessage(plugin.getLang("wait-for-loading"));
@@ -124,7 +125,7 @@ public class PlayerFreezeListener implements Listener {
     }
 
     @EventHandler(ignoreCancelled = true)
-    public void onInteraction(PlayerInteractEvent e) {
+    private void onInteraction(PlayerInteractEvent e) {
         if(plugin.isLocked(e.getPlayer().getUniqueId())) {
             e.setCancelled(true);
             e.getPlayer().sendMessage(plugin.getLang("wait-for-loading"));
@@ -132,7 +133,7 @@ public class PlayerFreezeListener implements Listener {
     }
 
     @EventHandler(ignoreCancelled = true)
-    public void onDamageEntity(EntityDamageByEntityEvent e) {
+    private void onDamageEntity(EntityDamageByEntityEvent e) {
         if(e.getDamager() instanceof Player && plugin.isLocked(e.getDamager().getUniqueId())) {
             e.setCancelled(true);
             e.getDamager().sendMessage(plugin.getLang("wait-for-loading"));
@@ -140,7 +141,7 @@ public class PlayerFreezeListener implements Listener {
     }
 
     @EventHandler(ignoreCancelled = true)
-    public void onBlockDamage(BlockDamageEvent e) {
+    private void onBlockDamage(BlockDamageEvent e) {
         if(plugin.isLocked(e.getPlayer().getUniqueId())) {
             e.setCancelled(true);
             e.getPlayer().sendMessage(plugin.getLang("wait-for-loading"));
@@ -148,7 +149,7 @@ public class PlayerFreezeListener implements Listener {
     }
 
     @EventHandler(ignoreCancelled = true)
-    public void onChat(AsyncPlayerChatEvent e) {
+    private void onChat(AsyncPlayerChatEvent e) {
         if(plugin.isLocked(e.getPlayer().getUniqueId())) {
             e.setCancelled(true);
             e.getPlayer().sendMessage(plugin.getLang("wait-for-loading"));
@@ -156,7 +157,7 @@ public class PlayerFreezeListener implements Listener {
     }
 
     @EventHandler(ignoreCancelled = true)
-    public void onChat(PlayerCommandPreprocessEvent e) {
+    private void onChat(PlayerCommandPreprocessEvent e) {
         if(plugin.isLocked(e.getPlayer().getUniqueId())) {
             e.setCancelled(true);
             e.getPlayer().sendMessage(plugin.getLang("wait-for-loading"));

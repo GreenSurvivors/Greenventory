@@ -5,6 +5,9 @@ import de.minebench.syncinv.SyncInv;
 import de.minebench.syncinv.SyncType;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Player;
+import org.jetbrains.annotations.Contract;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Collections;
 import java.util.HashSet;
@@ -50,17 +53,17 @@ public abstract class ServerMessenger {
     /**
      * The servers that are required to be online to query data
      */
-    private final Set<String> requiredServers;
+    private final Set<@NotNull String> requiredServers;
 
     /**
      * Store a set of all known servers
      */
-    private final Set<String> servers = new HashSet<>();
+    private final Set<@NotNull String> servers = new HashSet<>();
 
     /**
      * Store the current queries for PlayerData
      */
-    private final Map<UUID, PlayerDataQuery> queries = new ConcurrentHashMap<>();
+    private final Map<@NotNull UUID, @NotNull PlayerDataQuery> queries = new ConcurrentHashMap<>();
 
     /**
      * This holds queue requests that need to be executed when the player logs out
@@ -70,9 +73,9 @@ public abstract class ServerMessenger {
     /**
      * List of channels that this plugin listens on
      */
-    private Set<String> channels = new HashSet<>();
+    private Set<@NotNull String> channels = new HashSet<>();
 
-    public ServerMessenger(SyncInv plugin) {
+    public ServerMessenger(@NotNull SyncInv plugin) {
         this.plugin = plugin;
         serverGroup = plugin.getConfig().getString("server-group");
         serverName = plugin.getConfig().getString("server-name", plugin.getServer().getIp() + ":" + plugin.getServer().getPort());
@@ -101,8 +104,8 @@ public abstract class ServerMessenger {
      * Register channels that this messenger should listen on
      * @param channels  The channels to listen on
      */
-    private void registerChannel(String... channels) {
-        for (String channel : channels) {
+    private void registerChannel(@NotNull String... channels) {
+        for (@NotNull String channel : channels) {
             getChannels().add(channel);
         }
     }
@@ -112,7 +115,7 @@ public abstract class ServerMessenger {
      * @param playerId The UUID of the player
      * @return The new PlayerDataQuery object or null if one was already started
      */
-    public PlayerDataQuery queryData(UUID playerId) {
+    public @Nullable PlayerDataQuery queryData(@NotNull UUID playerId) {
         return queryData(playerId, (query) -> {
             if (!query.isCompleted() && !plugin.applyTimedOutQueries() && !isCompleted(query)) {
                 plugin.sendMessage(query.getPlayerId(), "cant-load-data");
@@ -148,7 +151,7 @@ public abstract class ServerMessenger {
      * @param onComplete    Handle the player data when all we have all information from the other servers
      * @return The PlayerDataQuery object, either a new one or the existing one. null if we are unable to query.
      */
-    public PlayerDataQuery queryData(UUID playerId, Consumer<PlayerDataQuery> onComplete) {
+    public @Nullable PlayerDataQuery queryData(@NotNull UUID playerId, @NotNull Consumer<@NotNull PlayerDataQuery> onComplete) {
         if (isAlone()) {
             plugin.logDebug("Tried to query data for " + playerId + " but we are all alone :'(");
             return null;
@@ -195,7 +198,7 @@ public abstract class ServerMessenger {
      * @param target    The server this message is targeted at
      * @param message   The message received
      */
-    protected void onMessage(String target, Message message) {
+    protected void onMessage(@Nullable String target, @NotNull Message message) {
         if (message.getSender().equals(getServerName()) // don't read messages from ourselves
                 || target != null // target is null? Accept message anyways...
                 && !"*".equals(target)
@@ -207,7 +210,7 @@ public abstract class ServerMessenger {
 
         servers.add(message.getSender());
 
-        UUID playerId = null;
+        UUID playerId;
         long lastSeen;
         Player player;
         PlayerDataQuery query;
@@ -287,7 +290,7 @@ public abstract class ServerMessenger {
                         });
                     } else {
                         plugin.logDebug(message.getId() + " Received " + message.getType() + " for " + data.playerId() + " from " + message.getSender() + " targeted at " + target + " but we decided to not apply it!"
-                                + " isQueryNull=" + (query == null) + ", shouldSyncWithGroupOnLogout=" + plugin.shouldSyncWithGroupOnLogout() + ", dataTimestamp=" + data.timeStamp());
+                                + " isQueryNull=true" + ", shouldSyncWithGroupOnLogout=" + plugin.shouldSyncWithGroupOnLogout() + ", dataTimestamp=" + data.timeStamp());
                     }
                     break;
 
@@ -338,7 +341,7 @@ public abstract class ServerMessenger {
         }
     }
 
-    private void completeQuery(PlayerDataQuery query) {
+    private void completeQuery(@NotNull PlayerDataQuery query) {
         query.stopTimeout();
         query.getOnComplete().accept(query);
     }
@@ -348,7 +351,7 @@ public abstract class ServerMessenger {
      * @param query The query to check
      * @return      Whether or not all servers responded
      */
-    private boolean isCompleted(PlayerDataQuery query) {
+    private boolean isCompleted(@NotNull PlayerDataQuery query) {
         if (query.getServers().size() < servers.size()) {
             return false;
         }
@@ -371,7 +374,7 @@ public abstract class ServerMessenger {
      * @param type      The type of the message to send
      * @param objects   The data to send in the order the exact order
      */
-    public void sendMessage(String target, long id, MessageType type, Object... objects) {
+    public void sendMessage(@NotNull String target, long id, @NotNull MessageType type, Object... objects) {
         sendMessage(target, new Message(getServerName(), id, type, objects), false);
     }
 
@@ -383,7 +386,7 @@ public abstract class ServerMessenger {
      * @param message   The message to send
      * @param sync      Whether the message should be send sync or on its own thread
      */
-    public void sendMessage(String target, Message message, boolean sync) {
+    public void sendMessage(@NotNull String target, @NotNull Message message, boolean sync) {
         plugin.logDebug(message.getId() + " Sending " + (sync ? "sync " : "") + message.getType() + " to " + target + " containing " + message.getData().size() + " objects.");
         sendMessageImplementation(target, message, sync);
     }
@@ -394,7 +397,7 @@ public abstract class ServerMessenger {
      * @param type      The type of the message to send
      * @param objects   The data to send in the order the exact order
      */
-    public void sendGroupMessage(long id, MessageType type, Object... objects) {
+    public void sendGroupMessage(long id, @NotNull MessageType type, Object... objects) {
         sendMessage("group:" + getServerGroup(), id, type, objects);
     }
 
@@ -403,17 +406,18 @@ public abstract class ServerMessenger {
      * @param message   The message to send
      * @param sync      Whether the message should be send sync or on its own thread
      */
-    public void sendGroupMessage(Message message, boolean sync) {
+    public void sendGroupMessage(@NotNull Message message, boolean sync) {
         sendMessage("group:" + getServerGroup(), message, sync);
     }
 
-    protected abstract void sendMessageImplementation(String target, Message message, boolean sync);
+    protected abstract void sendMessageImplementation(@NotNull String target, @NotNull Message message, boolean sync);
 
     /**
      * Check whether or not a player has an active query
      * @param playerId The UUID of the player
      */
-    public boolean hasQuery(UUID playerId) {
+    @Contract(pure = true)
+    public boolean hasQuery(@NotNull UUID playerId) {
         return queries.containsKey(playerId);
     }
 
@@ -421,7 +425,7 @@ public abstract class ServerMessenger {
      * Get the active query of a player
      * @param playerId The UUID of the player
      */
-    public PlayerDataQuery getQuery(UUID playerId) {
+    public @Nullable PlayerDataQuery getQuery(@NotNull UUID playerId) {
         return queries.get(playerId);
     }
 
@@ -431,9 +435,9 @@ public abstract class ServerMessenger {
      * @param query    The query to add
      * @return         The previous PlayerDataQuery if there was one
      */
-    public PlayerDataQuery addQuery(UUID playerId, PlayerDataQuery query) {
+    public @Nullable PlayerDataQuery addQuery(@NotNull UUID playerId, @NotNull PlayerDataQuery query) {
         Player player = plugin.getServer().getPlayer(playerId);
-        if (player != null && player.getOpenInventory().getCursor() != null) {
+        if (player != null) {
             // add item on cursor to inventory to prevent it from being lost
             player.getInventory().addItem(player.getOpenInventory().getCursor().clone());
             player.getOpenInventory().setCursor(null);
@@ -446,7 +450,7 @@ public abstract class ServerMessenger {
      * @param playerId  The UUID of the player
      * @return          The previous PlayerDataQuery if there was one
      */
-    public PlayerDataQuery removeQuery(UUID playerId) {
+    public @Nullable PlayerDataQuery removeQuery(@NotNull UUID playerId) {
         return queries.remove(playerId);
     }
 
@@ -456,7 +460,7 @@ public abstract class ServerMessenger {
      * @param server   The name of the server
      * @param id       The transaction ID this query is associated with
      */
-    private void queueDataRequest(UUID playerId, String server, long id) {
+    private void queueDataRequest(@NotNull UUID playerId, @NotNull String server, long id) {
         queuedDataRequests.computeIfAbsent(playerId, uuid -> Collections.synchronizedMap(new LinkedHashMap<>())).put(server, id);
     }
 
@@ -465,7 +469,7 @@ public abstract class ServerMessenger {
      * @param playerId The UUID of the player
      * @return A map with all servers that requested the data and the request ID
      */
-    public Map<String, Long> getQueuedDataRequest(UUID playerId) {
+    public @Nullable Map<@NotNull String, @NotNull Long> getQueuedDataRequest(@NotNull UUID playerId) {
         return queuedDataRequests.get(playerId);
     }
 
@@ -473,7 +477,7 @@ public abstract class ServerMessenger {
      * Send the data to the server that requested it
      * @param data The player's data
      */
-    public void fulfillQueuedDataRequest(PlayerData data) {
+    public void fulfillQueuedDataRequest(@NotNull PlayerData data) {
         Map<String, Long> servers = queuedDataRequests.get(data.playerId());
         if (servers != null) {
             queuedDataRequests.remove(data.playerId());

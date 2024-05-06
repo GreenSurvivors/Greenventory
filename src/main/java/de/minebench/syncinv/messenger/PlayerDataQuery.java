@@ -1,6 +1,8 @@
 package de.minebench.syncinv.messenger;
 
 import org.bukkit.scheduler.BukkitTask;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Map;
 import java.util.UUID;
@@ -27,21 +29,21 @@ import java.util.function.Consumer;
 
 public class PlayerDataQuery {
     private final long timestamp = System.currentTimeMillis();
-    private final UUID playerId;
+    private final @NotNull UUID playerId;
     private final long localLastSeen;
-    private final Consumer<PlayerDataQuery> onComplete;
-    private BukkitTask timeoutTask;
+    private final @NotNull Consumer<@NotNull PlayerDataQuery> onComplete;
+    private @Nullable BukkitTask timeoutTask;
     private boolean completed = false;
 
-    private Map<String, Long> servers = new ConcurrentHashMap<>();
+    private final @NotNull Map<@NotNull String, @NotNull Long> servers = new ConcurrentHashMap<>();
 
-    public PlayerDataQuery(UUID playerId, long localLastSeen, Consumer<PlayerDataQuery> onComplete) {
+    public PlayerDataQuery(@NotNull UUID playerId, long localLastSeen, @NotNull Consumer<@NotNull PlayerDataQuery> onComplete) {
         this.playerId = playerId;
         this.localLastSeen = localLastSeen;
         this.onComplete = onComplete;
     }
 
-    public UUID getPlayerId() {
+    public @NotNull UUID getPlayerId() {
         return playerId;
     }
 
@@ -49,7 +51,7 @@ public class PlayerDataQuery {
         return localLastSeen;
     }
 
-    public Map<String, Long> getServers() {
+    public @NotNull Map<@NotNull String, @NotNull Long> getServers() {
         return servers;
     }
 
@@ -58,7 +60,7 @@ public class PlayerDataQuery {
      * @param server The name of the server
      * @param lastSeen When the user was last seen on that server
      */
-    public void addResponse(String server, long lastSeen) {
+    public void addResponse(@NotNull String server, long lastSeen) {
         servers.put(server, lastSeen);
     }
 
@@ -66,7 +68,7 @@ public class PlayerDataQuery {
      * Get the youngest server recorded by this query
      * @return The name of the server or null if none was younger
      */
-    public String getYoungestServer() {
+    public @Nullable String getYoungestServer() {
         String server = null;
         long timestamp = localLastSeen;
         for (Map.Entry<String, Long> entry : servers.entrySet()) {
@@ -86,7 +88,7 @@ public class PlayerDataQuery {
         return timestamp;
     }
 
-    public void setTimeoutTask(BukkitTask timeoutTask) {
+    public void setTimeoutTask(@Nullable BukkitTask timeoutTask) {
         this.timeoutTask = timeoutTask;
     }
 
@@ -115,7 +117,7 @@ public class PlayerDataQuery {
      * Get notified for when this query completes
      * @return The consumer for when the query completes; gets this query objected passed for easier instance creation
      */
-    public Consumer<PlayerDataQuery> getOnComplete() {
+    public @NotNull Consumer<@NotNull PlayerDataQuery> getOnComplete() {
         return onComplete;
     }
 }

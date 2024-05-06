@@ -10,6 +10,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.jetbrains.annotations.NotNull;
 
 /*
  * SyncInv
@@ -32,7 +33,7 @@ import org.bukkit.event.Listener;
 public class PlayerConnectionValidateLoginListener implements Listener {
     private final SyncInv plugin;
 
-    public PlayerConnectionValidateLoginListener(SyncInv plugin) {
+    public PlayerConnectionValidateLoginListener(@NotNull SyncInv plugin) {
         this.plugin = plugin;
     }
 
