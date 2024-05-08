@@ -1,7 +1,7 @@
 package de.minebench.syncinv;
 
-import com.google.common.cache.Cache;
-import com.google.common.cache.CacheBuilder;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import com.google.common.io.ByteArrayDataOutput;
 import com.google.common.io.ByteStreams;
 import com.lishid.openinv.OpenInv;
@@ -234,7 +234,7 @@ public final class SyncInv extends JavaPlugin {
                 }
             }
         }
-        playerDataCache = CacheBuilder.newBuilder().expireAfterWrite(queryTimeout, TimeUnit.SECONDS).build();
+        playerDataCache = Caffeine.newBuilder().expireAfterWrite(queryTimeout, TimeUnit.SECONDS).build();
         try {
             messenger = new RedisMessenger(this);
             messenger.hello();
