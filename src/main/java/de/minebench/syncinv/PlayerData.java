@@ -189,8 +189,8 @@ public class PlayerData implements Serializable {
 
     /**
      * @return the players current experience points.
-     * This refers to the total amount of experience the player has collected over time
-     * and is not currently displayed to the client.
+     *     This refers to the total amount of experience the player has collected over time
+     *     and is not currently displayed to the client.
      */
     public int getTotalExperience() {
         return totalExperience;
@@ -205,7 +205,7 @@ public class PlayerData implements Serializable {
 
     /**
      * @return the players current experience points towards the next level
-     * This is a percentage value. 0 is "no progress" and 1 is "next level".
+     *     This is a percentage value. 0 is "no progress" and 1 is "next level".
      */
     public float getExp() {
         return exp;
@@ -248,7 +248,7 @@ public class PlayerData implements Serializable {
 
     /**
      * @return the number to scale health to for the client
-     * Displayed health follows a simple formula displayedHealth = getHealth() / getMaxHealth() * getHealthScale()
+     *     Displayed health follows a simple formula displayedHealth = getHealth() / getMaxHealth() * getHealthScale()
      */
     public double getHealthScale() {
         return healthScale;
@@ -263,7 +263,7 @@ public class PlayerData implements Serializable {
 
     /**
      * @return the players current saturation level.
-     * Saturation is a buffer for food level. Your food level will not drop if you are saturated > 0.
+     *     Saturation is a buffer for food level. Your food level will not drop if you are saturated > 0.
      */
     public float getSaturation() {
         return saturation;
@@ -271,9 +271,9 @@ public class PlayerData implements Serializable {
 
     /**
      * @return the players current exhaustion level.
-     * Exhaustion controls how fast the food level drops.
-     * While you have a certain amount of exhaustion, your saturation will drop to zero,
-     * and then your food will drop to zero.
+     *     Exhaustion controls how fast the food level drops.
+     *     While you have a certain amount of exhaustion, your saturation will drop to zero,
+     *     and then your food will drop to zero.
      */
     public float getExhaustion() {
         return exhaustion;
@@ -330,7 +330,7 @@ public class PlayerData implements Serializable {
 
     /**
      * @return Set the slot number of the currently held item.
-     * This validates whether the slot is between 0 and 8 inclusive.
+     *     This validates whether the slot is between 0 and 8 inclusive.
      */
     public int getHeldItemSlot() {
         return heldItemSlot;

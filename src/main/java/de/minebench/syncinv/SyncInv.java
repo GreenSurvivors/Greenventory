@@ -443,7 +443,7 @@ public final class SyncInv extends JavaPlugin {
      * @param playerId The UUID of the player
      * @param online   Whether or not it should return the current time if the player is online
      * @return The timestamp of his last known data on the server in milliseconds;
-     * 0 if the file doesn't exist or an error occurs. (Take a look at {File#lastModified})
+     *     0 if the file doesn't exist or an error occurs. (Take a look at {File#lastModified})
      */
     public long getLastSeen(UUID playerId, boolean online) {
         if (online) {
