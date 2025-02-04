@@ -50,7 +50,7 @@ create-world: true
 
 # The amount of seconds we should maximally wait for all servers to
 # respond to a query
-query-timeout: 5
+query-timeout: 15
 
 # Whether or not we should load the data from queries that timed out
 # This might run into issues if the server with the most recent data
@@ -101,6 +101,12 @@ sync:
   item-statistics: false
   # Should the plugin sync block player statistics?
   block-statistics: false
+  # Statistics to sync or not sync
+  statistics-filter:
+    # mode to apply to the filter list, "deny" or "allow"
+    mode: "deny"
+    # The list, see https://hub.spigotmc.org/javadocs/spigot/org/bukkit/Statistic.html for the names
+    list: []
   # Should the plugin try to keep maps in sync?
   maps: true
   # Should sync Dienstmodus inventories?

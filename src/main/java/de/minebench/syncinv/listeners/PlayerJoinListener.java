@@ -47,7 +47,7 @@ public class PlayerJoinListener implements Listener {
                 e.setKickMessage(ChatColor.RED + plugin.getName() + " is not enabled! Please contact an administrator!");
                 return;
             }
-            if (plugin.getMessenger().queryData(e.getUniqueId()) == null && !plugin.getMessenger().isAlone()) {
+            if (plugin.getMessenger().queryData(e.getUniqueId()) == null && (!plugin.getMessenger().isAllowedToBeAlone() || !plugin.getMessenger().isAlone())) {
                 e.setLoginResult(AsyncPlayerPreLoginEvent.Result.KICK_OTHER);
                 e.setKickMessage(ChatColor.RED + "Unable to query player data!");
                 return;
@@ -80,7 +80,8 @@ public class PlayerJoinListener implements Listener {
     @EventHandler(priority = EventPriority.LOWEST)
     public void onPlayerJoined(PlayerJoinEvent e) {
         Map.Entry<PlayerData, Runnable> cached = plugin.getCachedData(e.getPlayer());
-        if (cached != null) {
+        if (cached != null && plugin.getLastSeen(e.getPlayer().getUniqueId(), false) < cached.getKey().getLastSeen()) {
+            plugin.removeCachedData(e.getPlayer());
             plugin.applyData(cached.getKey(), cached.getValue());
         }
     }

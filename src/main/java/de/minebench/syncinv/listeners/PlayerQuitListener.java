@@ -5,13 +5,12 @@ import de.minebench.syncinv.PlayerData;
 import de.minebench.syncinv.SyncInv;
 import de.minebench.syncinv.messenger.MessageType;
 import de.minebench.syncinv.messenger.PlayerDataQuery;
-import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerQuitEvent;
 
-import java.util.Set;
+import java.util.Map;
 
 /*
  * SyncInv
@@ -58,9 +57,9 @@ public class PlayerQuitListener implements Listener {
 
 
         if (plugin.shouldSyncWithGroupOnLogout()) {
-            plugin.getMessenger().sendGroupMessage(MessageType.DATA, plugin.getData(event.getPlayer()));
+            plugin.getMessenger().sendGroupMessage(System.currentTimeMillis(), MessageType.DATA, plugin.getData(event.getPlayer()));
         } else {
-            Set<String> servers = plugin.getMessenger().getQueuedDataRequest(event.getPlayer().getUniqueId());
+            Map<String, Long> servers = plugin.getMessenger().getQueuedDataRequest(event.getPlayer().getUniqueId());
             if (servers != null && !servers.isEmpty()) {
                 PlayerData data = plugin.getData(event.getPlayer());
                 plugin.getMessenger().fulfillQueuedDataRequest(data);

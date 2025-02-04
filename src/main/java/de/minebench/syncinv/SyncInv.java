@@ -5,7 +5,7 @@ import com.google.common.cache.CacheBuilder;
 import com.google.common.io.ByteArrayDataOutput;
 import com.google.common.io.ByteStreams;
 import com.lishid.openinv.OpenInv;
-import com.lishid.openinv.commands.OpenInvCommand;
+import com.lishid.openinv.command.OpenInvCommand;
 import com.mojang.authlib.GameProfile;
 import de.greensurvivors.dienstmodus.DienstmodusApi;
 import de.greensurvivors.dienstmodus.DienstmodusData;
@@ -54,8 +54,11 @@ import java.util.AbstractMap;
 import java.util.Date;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
@@ -135,6 +138,16 @@ public final class SyncInv extends JavaPlugin {
     private EnumSet<SyncType> enabledSyncTypes;
 
     /**
+     * The statistics filter mode
+     */
+    private FilterMode statisticsFilterMode = FilterMode.DENY;
+
+    /**
+     * The statistics filter list
+     */
+    private Set<Statistic> statisticsFilter = new HashSet<>();
+
+    /**
      * Whether or not the plugin is currently disabling
      */
     @Getter
@@ -163,12 +176,6 @@ public final class SyncInv extends JavaPlugin {
 
     // Offline player health setting
     private Method methodSetHealth;
-
-    // Persistent data syncing
-    private Method methodDeserializeCompound = null;
-    private Method methodPdcSerialize = null;
-    private Method methodGetRaw = null;
-    private Method methodPutAll = null;
 
     // Map syncing
     private Field fieldWorldMap;
@@ -214,9 +221,9 @@ public final class SyncInv extends JavaPlugin {
         getServer().getMessenger().registerOutgoingPluginChannel(this, "BungeeCord");
         getCommand("syncinv").setExecutor(this);
         if (openInv != null) {
-            OpenInvCommand openInvCommand = new OpenInvCommand(openInv);
+            OpenInvCommand openInvCommand = (OpenInvCommand) openInv.getCommand("openinv").getExecutor();
             CommandExecutor forwarding = (sender, command, label, args) -> {
-                if (sender instanceof Player && args.length > 0) {
+                if (sender instanceof Player && args.length > 0 && (!getMessenger().isAllowedToBeAlone() || !getMessenger().isAlone())) {
                     if ("?".equalsIgnoreCase(args[0])) {
                         return openInvCommand.onCommand(sender, command, label, args);
                     }
@@ -291,7 +298,7 @@ public final class SyncInv extends JavaPlugin {
         disabling = true;
         if (getMessenger() != null) {
             for (Player player : getServer().getOnlinePlayers()) {
-                getMessenger().sendGroupMessage(new Message(getMessenger().getServerName(), MessageType.DATA, getData(player)), true);
+                getMessenger().sendGroupMessage(new Message(getMessenger().getServerName(), System.currentTimeMillis(), MessageType.DATA, getData(player)), true);
             }
             getMessenger().goodbye();
         }
@@ -326,6 +333,23 @@ public final class SyncInv extends JavaPlugin {
             }
         }
 
+        try {
+            statisticsFilterMode = FilterMode.valueOf(getConfig().getString("statistics-filter.mode", FilterMode.DENY.name()).toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            getLogger().log(Level.WARNING, "Invalid statistics filter mode in config! Using default DENY");
+            statisticsFilterMode = FilterMode.DENY;
+        }
+
+        Set<Statistic> statisticsFilter = EnumSet.noneOf(Statistic.class);
+        for (String statisticName : getConfig().getStringList("statistics-filter.list")) {
+            try {
+                statisticsFilter.add(Statistic.valueOf(statisticName.toUpperCase(Locale.ROOT)));
+            } catch (IllegalArgumentException e) {
+                getLogger().log(Level.WARNING, "Invalid statistic in statistics filter list: " + statisticName);
+            }
+        }
+        this.statisticsFilter = statisticsFilter;
+
         if (getServer().getPluginManager().isPluginEnabled("OpenInv")) {
             openInv = (OpenInv) getServer().getPluginManager().getPlugin("OpenInv");
             getLogger().log(Level.INFO, "Hooked into " + openInv.getName() + " " + openInv.getDescription().getVersion());
@@ -333,10 +357,9 @@ public final class SyncInv extends JavaPlugin {
 
         if (shouldSync(SyncType.PERSISTENT_DATA)) {
             try {
-                String basePackage = getServer().getClass().getPackage().getName();
-                Class<?> c = Class.forName(basePackage + ".util.CraftNBTTagConfigSerializer");
-                methodDeserializeCompound = c.getMethod("deserialize", Object.class);
-            } catch (ClassNotFoundException | NoSuchMethodException e) {
+                PersistentDataContainer.class.getMethod("readFromBytes", byte[].class, boolean.class);
+                PersistentDataContainer.class.getMethod("serializeToBytes");
+            } catch (NoSuchMethodException e) {
                 if (shouldSync(SyncType.PERSISTENT_DATA)) {
                     getLogger().log(Level.WARNING, "Could not load static method required for persistent data syncing. Disabling it!", e);
                     disableSync(SyncType.PERSISTENT_DATA);
@@ -563,66 +586,81 @@ public final class SyncInv extends JavaPlugin {
             Player player = getServer().getPlayer(data.getPlayerId());
             boolean createdNewFile = false;
             if ((player == null || !player.isOnline()) && getMessenger().hasQuery(data.getPlayerId())) {
-                cacheData(data, finished);
-                logDebug("Player " + data.getPlayerId() + " has query but was not fully online yet! Caching data...");
+                long localLastSeen = getLastSeen(data.getPlayerId(), true);
+                if (localLastSeen < data.getLastSeen()) {
+                    cacheData(data, finished);
+                    logDebug("Player " + data.getPlayerId() + " has query but was not fully online yet! Caching data " + data.getLastSeen() + "...");
+                } else {
+                    logDebug("Not caching data for player " + data.getPlayerId() + " as our local player data is not older (" + localLastSeen + ") than the one provided! (" + data.getLastSeen() + ")");
+                }
                 return;
             }
-            if (getOpenInv() != null && player == null) {
-                OfflinePlayer offlinePlayer = getServer().getOfflinePlayer(data.getPlayerId());
-                if (storeUnknownPlayers && !offlinePlayer.hasPlayedBefore()) {
-                    if (offlinePlayer.getName() == null) {
+            if (getOpenInv() != null) {
+                if (player == null) {
+                    OfflinePlayer offlinePlayer = getServer().getOfflinePlayer(data.getPlayerId());
+                    if (storeUnknownPlayers && !offlinePlayer.hasPlayedBefore()) {
+                        if (offlinePlayer.getName() == null) {
+                            try {
+                                offlinePlayer = (OfflinePlayer) methodGetOfflinePlayer.invoke(getServer(), new GameProfile(data.getPlayerId(), data.getPlayerName()));
+                            } catch (IllegalAccessException | InvocationTargetException e) {
+                                logDebug("Could not create offline player for " + data.getPlayerId() + "! " + e.getMessage());
+                            }
+                        }
+                        createdNewFile = createNewEmptyData(offlinePlayer.getUniqueId());
+                    }
+                    player = getOpenInv().loadPlayer(offlinePlayer);
+                    if (player == null) {
+                        logDebug("Unable to load player " + offlinePlayer.getName() + "/" + offlinePlayer.getUniqueId() + " data with OpenInv");
+                    } else if (createdNewFile) {
                         try {
-                            offlinePlayer = (OfflinePlayer) methodGetOfflinePlayer.invoke(getServer(), new GameProfile(data.getPlayerId(), data.getPlayerName()));
-                        } catch (IllegalAccessException | InvocationTargetException e) {
-                            logDebug("Could not create offline player for " + data.getPlayerId() + "! " + e.getMessage());
+                            if (methodGetHandle == null) {
+                                methodGetHandle = player.getClass().getMethod("getHandle");
+                            }
+                            Object entity = methodGetHandle.invoke(player);
+                            if (methodSetPositionRaw == null || (fieldYaw == null && methodSetYaw == null) || (fieldPitch == null || methodSetPitch == null)) {
+                                try {
+                                    // should be the "go-to" since 1.20.5+ for paper
+                                    methodSetPositionRaw = entity.getClass().getMethod("setPositionRaw", double.class, double.class, double.class);
+                                } catch (NoSuchMethodException e) {
+                                    // TODO: Better obfuscation support <-- use paper's userDev
+                                    // 1.18-1.18.2 was "e", would become "o" until 1.19.2 and is now (1.20.6 when not Moj-Mapped) "p"
+                                    methodSetPositionRaw = entity.getClass().getMethod("p", double.class, double.class, double.class);
+                                }
+                                try {
+                                    fieldYaw = entity.getClass().getField("yaw");
+                                    fieldPitch = entity.getClass().getField("pitch");
+                                } catch (NoSuchFieldException e) {
+                                    try {
+                                        methodSetYaw = entity.getClass().getMethod("setYRot", float.class);
+                                        methodSetPitch = entity.getClass().getMethod("setYRot", float.class);
+                                    } catch (NoSuchMethodException ignored) {}
+                                }
+                            }
+                            Location spawn = getServer().getWorlds().get(0).getSpawnLocation();
+                            methodSetPositionRaw.invoke(entity, spawn.getX(), spawn.getY(), spawn.getZ());
+                            if (fieldYaw != null) {
+                                fieldYaw.set(entity, spawn.getYaw());
+                            } else if (methodSetYaw != null) {
+                                methodSetYaw.invoke(entity, spawn.getYaw());
+                            }
+                            if (fieldPitch != null) {
+                                fieldPitch.set(entity, spawn.getPitch());
+                            } else if (methodSetPitch != null) {
+                                methodSetPitch.invoke(entity, spawn.getPitch());
+                            }
+                        } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
+                            getLogger().log(Level.WARNING, "Error while trying to set location of an unknown player. Disabling unknown player storage it!", e);
+                            storeUnknownPlayers = false;
+                            player = null;
+                            getOpenInv().unload(offlinePlayer);
                         }
                     }
-                    createdNewFile = createNewEmptyData(offlinePlayer.getUniqueId());
-                }
-                player = getOpenInv().loadPlayer(offlinePlayer);
-                if (player == null) {
-                    logDebug("Unable to load player " + offlinePlayer.getName() + "/" + offlinePlayer.getUniqueId() + " data with OpenInv");
-                } else if (createdNewFile) {
-                    try {
-                        if (methodGetHandle == null) {
-                            methodGetHandle = player.getClass().getMethod("getHandle");
-                        }
-                        Object entity = methodGetHandle.invoke(player);
-                        if (methodSetPositionRaw == null || (fieldYaw == null && methodSetYaw == null) || (fieldPitch == null || methodSetPitch == null)) {
-                            try {
-                                methodSetPositionRaw = entity.getClass().getMethod("setPositionRaw", double.class, double.class, double.class);
-                            } catch (NoSuchMethodException e) {
-                                // TODO: Better obfuscation support
-                                // 1.18-1.18.2
-                                methodSetPositionRaw = entity.getClass().getMethod("e", double.class, double.class, double.class);
-                            }
-                            try {
-                                fieldYaw = entity.getClass().getField("yaw");
-                                fieldPitch = entity.getClass().getField("pitch");
-                            } catch (NoSuchFieldException e) {
-                                try {
-                                    methodSetYaw = entity.getClass().getMethod("setYRot", float.class);
-                                    methodSetPitch = entity.getClass().getMethod("setYRot", float.class);
-                                } catch (NoSuchMethodException ignored) {}
-                            }
-                        }
-                        Location spawn = getServer().getWorlds().get(0).getSpawnLocation();
-                        methodSetPositionRaw.invoke(entity, spawn.getX(), spawn.getY(), spawn.getZ());
-                        if (fieldYaw != null) {
-                            fieldYaw.set(entity, spawn.getYaw());
-                        } else if (methodSetYaw != null) {
-                            methodSetYaw.invoke(entity, spawn.getYaw());
-                        }
-                        if (fieldPitch != null) {
-                            fieldPitch.set(entity, spawn.getPitch());
-                        } else if (methodSetPitch != null) {
-                            methodSetPitch.invoke(entity, spawn.getPitch());
-                        }
-                    } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
-                        getLogger().log(Level.WARNING, "Error while trying to set location of an unknown player. Disabling unknown player storage it!", e);
-                        storeUnknownPlayers = false;
-                        player = null;
-                        getOpenInv().unload(offlinePlayer);
+                } else if (!getOpenInv().disableSaving() && getOpenInv().isPlayerLoaded(player.getUniqueId())) {
+                    Player openInvLoadedPlayer = getOpenInv().loadPlayer(player);
+
+                    if (openInvLoadedPlayer != null && openInvLoadedPlayer != player) {
+                        // The copy loaded by OpenInv is not the same as our loaded copy. Use theirs to stay in sync
+                        player = openInvLoadedPlayer;
                     }
                 }
             }
@@ -634,9 +672,7 @@ public final class SyncInv extends JavaPlugin {
                 }
                 return;
             }
-            if (getOpenInv() != null && !player.isOnline()) {
-                getOpenInv().retainPlayer(player, this);
-            }
+
             try {
                 if (shouldSync(SyncType.EXPERIENCE)) {
                     player.setTotalExperience(0);
@@ -698,6 +734,7 @@ public final class SyncInv extends JavaPlugin {
                     }
                 }
 
+                logDebug("Applying data for " + player.getName() + " (" + data.getLastSeen() + ")");
                 if (shouldSync(SyncType.INVENTORY))
                     player.getInventory().setContents(data.getInventoryContents());
                 if (shouldSync(SyncType.ENDERCHEST))
@@ -736,19 +773,8 @@ public final class SyncInv extends JavaPlugin {
                 if (shouldSync(SyncType.PERSISTENT_DATA) && data.getPersistentData() != null) {
                     try {
                         PersistentDataContainer pdc = player.getPersistentDataContainer();
-                        if (methodGetRaw == null) {
-                            methodGetRaw = pdc.getClass().getMethod("getRaw");
-                        }
-                        Map<String, ?> raw = (Map<String, ?>) methodGetRaw.invoke(pdc);
-                        raw.entrySet().removeIf(e -> !data.getPersistentData().containsKey(e.getKey()));
-
-                        if (methodPutAll == null) {
-                            Method toTagCompound = pdc.getClass().getMethod("toTagCompound");
-                            Object tagCompound = toTagCompound.invoke(pdc);
-                            methodPutAll = pdc.getClass().getMethod("putAll", tagCompound.getClass());
-                        }
-                        methodPutAll.invoke(pdc, methodDeserializeCompound.invoke(null, data.getPersistentData()));
-                    } catch (ClassCastException | NoSuchMethodException e) {
+                        pdc.readFromBytes(data.getPersistentData(), true);
+                    } catch (IOException e) {
                         getLogger().log(Level.WARNING, "Error while trying to write PersistentDataContainer data. Disabling persistent data syncing!", e);
                         disableSync(SyncType.PERSISTENT_DATA);
                     }
@@ -793,52 +819,51 @@ public final class SyncInv extends JavaPlugin {
                     }
                 }
                 if (shouldSyncAny(SyncType.GENERAL_STATISTICS, SyncType.ENTITY_STATISTICS, SyncType.ITEM_STATISTICS, SyncType.BLOCK_STATISTICS)) {
-                    for (Statistic statistic : Statistic.values()) {
-                        switch (statistic.getType()) {
-                            case UNTYPED:
-                                if (shouldSync(SyncType.GENERAL_STATISTICS)) {
-                                    Integer value = data.getStatistics().get(statistic, "");
-                                    if (value != null && value >= 0) {
-                                        player.setStatistic(statistic, value);
-                                    }
-                                }
-                                break;
-                            case ENTITY:
-                                if (shouldSync(SyncType.ENTITY_STATISTICS)) {
-                                    for (EntityType entityType : EntityType.values()) {
-                                        Integer value = data.getStatistics().get(statistic, entityType.name());
-                                        if (value != null && value > 0) {
-                                            player.setStatistic(statistic, entityType, value);
-                                        }
-                                    }
-                                }
-                                break;
-                            case BLOCK:
-                                if (shouldSync(SyncType.BLOCK_STATISTICS)) {
-                                    for (Material blockType : Material.values()) {
-                                        if (blockType.isBlock()) {
-                                            Integer value = data.getStatistics().get(statistic, blockType.name());
-                                            if (value != null && value > 0) {
-                                                player.setStatistic(statistic, blockType, value);
-                                            }
-                                        }
-                                    }
-                                }
-                                break;
-                            case ITEM:
-                                if (shouldSync(SyncType.ITEM_STATISTICS)) {
-                                    for (Material itemType : Material.values()) {
-                                        if (itemType.isItem()) {
-                                            Integer value = data.getStatistics().get(statistic, itemType.name());
-                                            if (value != null && value > 0) {
-                                                player.setStatistic(statistic, itemType, value);
-                                            }
-                                        }
-                                    }
-                                }
-                                break;
+                    for (Map.Entry<Statistic, Map<String, Integer>> entry : data.getStatistics().rowMap().entrySet()) {
+                        Statistic statistic = entry.getKey();
+                        if (!shouldBeSynced(statistic)) {
+                            continue;
                         }
-                    }
+
+                        for (Map.Entry<String, Integer> valueEntry : entry.getValue().entrySet()) {
+                            if (valueEntry.getValue() <= 0) {
+                                continue;
+                            }
+                            switch (statistic.getType()) {
+                                case UNTYPED:
+                                    if (shouldSync(SyncType.GENERAL_STATISTICS)) {
+                                        player.setStatistic(statistic, valueEntry.getValue());
+                                    }
+                                    break;
+                                case ENTITY:
+                                    if (shouldSync(SyncType.ENTITY_STATISTICS)) {
+                                        try {
+                                            EntityType entityType = EntityType.valueOf(valueEntry.getKey());
+                                            player.setStatistic(statistic, entityType, valueEntry.getValue());
+                                        } catch (IllegalArgumentException ignored) {
+                                            // unknown entity type
+                                        }
+                                    }
+                                    break;
+                                case BLOCK:
+                                    if (shouldSync(SyncType.BLOCK_STATISTICS)) {
+                                        Material blockType = Material.getMaterial(valueEntry.getKey());
+                                        if (blockType != null) {
+                                            player.setStatistic(statistic, blockType, valueEntry.getValue());
+                                        }
+                                    }
+                                    break;
+                                case ITEM:
+                                    if (shouldSync(SyncType.ITEM_STATISTICS)) {
+                                        Material itemType = Material.getMaterial(valueEntry.getKey());
+                                        if (itemType != null) {
+                                            player.setStatistic(statistic, itemType, valueEntry.getValue());
+                                        }
+                                    }
+                                    break;
+                            }
+                        }
+                        }
                 }
                 if (player.isOnline()) {
                     if (shouldSync(SyncType.EFFECTS)) {
@@ -911,11 +936,22 @@ public final class SyncInv extends JavaPlugin {
                 }
             } finally {
                 if (getOpenInv() != null) {
-                    getOpenInv().releasePlayer(player, this);
                     getOpenInv().unload(player);
                 }
             }
         });
+    }
+
+    /**
+     * Check if a statistic should get synced
+     * @param statistic The statistic to check
+     * @return Whether it should be synced
+     */
+    private boolean shouldBeSynced(Statistic statistic) {
+        if (statisticsFilter.contains(statistic)) {
+            return statisticsFilterMode == FilterMode.ALLOW;
+        }
+        return statisticsFilterMode == FilterMode.DENY;
     }
 
     /**
@@ -946,6 +982,14 @@ public final class SyncInv extends JavaPlugin {
         return playerDataCache.getIfPresent(player.getUniqueId());
     }
 
+    /**
+     * Remove the cached data of a player
+     * @param player   The player to remove the data for
+     */
+    public void removeCachedData(Player player) {
+        playerDataCache.invalidate(player.getUniqueId());
+    }
+
     private File getPlayerDataFile(UUID playerId) {
         return new File(playerDataFolder, playerId + ".dat");
     }
@@ -959,7 +1003,7 @@ public final class SyncInv extends JavaPlugin {
         if (playerDat.exists()) {
             return false;
         }
-        
+
         try {
             playerDat.getParentFile().mkdirs();
             Files.copy(getResource("empty.dat"), playerDat.toPath());
@@ -969,7 +1013,7 @@ public final class SyncInv extends JavaPlugin {
         }
         return false;
     }
-    
+
     public PlayerData getData(Player player) {
         PlayerData data;
         if (shouldSync(SyncType.DIENSTMODUS)) {
@@ -987,14 +1031,11 @@ public final class SyncInv extends JavaPlugin {
         }
 
         if (shouldSync(SyncType.PERSISTENT_DATA)) {
+            PersistentDataContainer pdc = player.getPersistentDataContainer();
             try {
-                PersistentDataContainer pdc = player.getPersistentDataContainer();
-                if (methodPdcSerialize == null) {
-                    methodPdcSerialize = pdc.getClass().getMethod("serialize");
-                }
-                data.setPersistentData((Map<String, Object>) methodPdcSerialize.invoke(pdc));
-            } catch (ClassCastException | NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
-                getLogger().log(Level.WARNING, "Error while trying to access PersistentDataContainer data. Disabling persistent data syncing!", e);
+                data.setPersistentData(pdc.serializeToBytes());
+            } catch (IOException e) {
+                getLogger().log(Level.WARNING, "Error while trying to access PersistentDataContainer data (" + pdc + "). Disabling persistent data syncing!", e);
                 disableSync(SyncType.PERSISTENT_DATA);
             }
         }
@@ -1198,7 +1239,7 @@ public final class SyncInv extends JavaPlugin {
 
     public void setNewestMap(int newestMap) {
         if (getNewestMap() < newestMap) {
-            getMessenger().sendGroupMessage(MessageType.MAP_CREATED, newestMap);
+            getMessenger().sendGroupMessage(System.currentTimeMillis(), MessageType.MAP_CREATED, newestMap);
             this.newestMap = newestMap;
         }
     }
@@ -1217,5 +1258,10 @@ public final class SyncInv extends JavaPlugin {
             return map.getWorld().getUID();
         }
         return null;
+    }
+
+    private enum FilterMode {
+        DENY,
+        ALLOW
     }
 }
