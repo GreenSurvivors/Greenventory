@@ -29,7 +29,7 @@
         <repository>
             <id>greensurvivors-maven</id>
             <name>GreenSurvivors Maven Repository</name>
-            <url>https://maven.greensurvivors.de/</url>
+            <url>https://maven.greensurvivors.de/releases</url>
         </repository>
     </repositories>
 
