@@ -16,16 +16,7 @@ import de.minebench.syncinv.listeners.PlayerJoinListener;
 import de.minebench.syncinv.listeners.PlayerQuitListener;
 import de.minebench.syncinv.messenger.*;
 import lombok.Getter;
-import org.bukkit.ChatColor;
-import org.bukkit.GameRule;
-import org.bukkit.Location;
-import org.bukkit.Material;
-import org.bukkit.OfflinePlayer;
-import org.bukkit.Sound;
-import org.bukkit.Statistic;
-import org.bukkit.World;
-import org.bukkit.WorldCreator;
-import org.bukkit.WorldType;
+import org.bukkit.*;
 import org.bukkit.advancement.Advancement;
 import org.bukkit.advancement.AdvancementProgress;
 import org.bukkit.attribute.Attribute;
@@ -50,16 +41,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.util.AbstractMap;
-import java.util.Date;
-import java.util.EnumSet;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 
@@ -208,8 +190,10 @@ public final class SyncInv extends JavaPlugin {
                 messenger = null;
             }
         } else if ("greensocket".equals(messengerType)) {
-            messenger = new GreenSocketMessenger(this);
-            messenger.hello();
+             GreenSocketMessenger gsMessenger = new GreenSocketMessenger(this);
+             // When GreenSocket is connected, the event triggers the HELLO message for registrating to the SyncInv group.
+             Bukkit.getPluginManager().registerEvents(gsMessenger, this);
+            messenger = gsMessenger;
         } else {
             messenger = null;
         }

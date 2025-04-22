@@ -2,6 +2,7 @@ package de.minebench.syncinv.messenger;
 
 import de.greensurvivors.greensocket.network.packets.ByteArrayPacket;
 import de.greensurvivors.greensocket.spigot.SpigotSocketApi;
+import de.greensurvivors.greensocket.spigot.event.ClientConnectEvent;
 import de.greensurvivors.greensocket.spigot.event.ReceivedPacketEvent;
 import de.minebench.syncinv.SyncInv;
 import org.bukkit.Bukkit;
@@ -12,7 +13,7 @@ import org.bukkit.event.Listener;
 import java.io.IOException;
 import java.util.logging.Level;
 
-public class GreenSocketMessenger extends ServerMessenger {
+public class GreenSocketMessenger extends ServerMessenger implements Listener {
 
     private static final String CHANNEL_PREFIX = "syncinv:";
     private static final String VERSION_PREFIX = Message.VERSION + ":";
@@ -74,5 +75,10 @@ public class GreenSocketMessenger extends ServerMessenger {
                 }
             }
         };
+    }
+
+    @EventHandler
+    void initialiseOnConnect(ClientConnectEvent connectEvent) {
+        this.hello();
     }
 }
