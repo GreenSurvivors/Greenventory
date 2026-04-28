@@ -11,15 +11,16 @@ import de.greensurvivors.dienstmodus.DienstmodusApi;
 import de.greensurvivors.dienstmodus.DienstmodusData;
 import de.greensurvivors.dienstmodus.InventoryLoadException;
 import de.minebench.syncinv.listeners.MapCreationListener;
+import de.minebench.syncinv.listeners.PlayerConnectionValidateLoginListener;
 import de.minebench.syncinv.listeners.PlayerFreezeListener;
 import de.minebench.syncinv.listeners.PlayerJoinListener;
+import de.minebench.syncinv.listeners.PlayerLoginListener;
 import de.minebench.syncinv.listeners.PlayerQuitListener;
 import de.minebench.syncinv.messenger.*;
 import lombok.Getter;
 import org.bukkit.*;
 import org.bukkit.advancement.Advancement;
 import org.bukkit.advancement.AdvancementProgress;
-import org.bukkit.attribute.Attribute;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -36,6 +37,9 @@ import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -43,6 +47,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import java.util.logging.Level;
 
 /*
@@ -148,7 +153,7 @@ public final class SyncInv extends JavaPlugin {
     private int newestMap = 0;
     
     // Unknown player storing
-    private Method methodGetOfflinePlayer = null;
+    private Function<GameProfile, OfflinePlayer> getOfflinePlayer = null;
     private Method methodGetHandle = null;
     private Method methodSetPositionRaw;
     private Field fieldYaw = null;
@@ -171,13 +176,62 @@ public final class SyncInv extends JavaPlugin {
         // Plugin startup logic
         loadConfig();
         
-        playerDataFolder = new File(getServer().getWorlds().get(0).getWorldFolder(), "playerdata");
+        playerDataFolder = getServer().getMinecraftVersion().startsWith("1.")
+                ? new File(getServer().getWorlds().get(0).getWorldFolder(), "playerdata")
+                : new File(new File(getServer().getWorlds().get(0).getWorldFolder(), "players"), "data");
+
+        MethodHandle tempUUIDGetterHandle = null;
         try {
-            methodGetOfflinePlayer = getServer().getClass().getMethod("getOfflinePlayer", GameProfile.class);
+            tempUUIDGetterHandle = MethodHandles.privateLookupIn(GameProfile.class, MethodHandles.lookup()).findGetter(GameProfile.class, "id", UUID.class);
+        } catch (NoSuchFieldException | IllegalAccessException e) {
+            getLogger().log(Level.SEVERE, "Could not get MethodHandle to access uuids from GameProfile. If anything happens, we will be unable to log the uuids!", e);
+        }
+        // java being java. We can't assign a final variable in a try block.
+        final MethodHandle uuidGetterHandle = tempUUIDGetterHandle;
+
+        try {
+            Method methodGetOfflinePlayer = getServer().getClass().getMethod("getOfflinePlayer", GameProfile.class);
+            getOfflinePlayer = (gameProfile -> {
+                try {
+                    return  (OfflinePlayer) methodGetOfflinePlayer.invoke(getServer(), gameProfile);
+                } catch (IllegalAccessException | InvocationTargetException e) {
+                    if (uuidGetterHandle != null) {
+                        try {
+                            logDebug("Could not create offline player for " + uuidGetterHandle.invoke(gameProfile) + "! " + e.getMessage());
+                        } catch (Throwable ex) {
+                            logDebug("Could not create offline player. " + e.getMessage());
+                            logDebug("And uuid lookup failed: " + ex.getMessage());
+                        }
+                    }
+                }
+                return null;
+            });
         } catch (NoSuchMethodException e) {
-            if (storeUnknownPlayers) {
-                getLogger().log(Level.WARNING, "Could not load method required to store unknown players. Disabling it!", e);
-                storeUnknownPlayers = false;
+            try {
+                Class nameAndIdClass = Class.forName("net.minecraft.server.players.NameAndId");
+                Constructor nameAndIdConstructor = nameAndIdClass.getConstructor(GameProfile.class);
+                Method methodGetOfflinePlayer = getServer().getClass().getMethod("getOfflinePlayer", nameAndIdClass);
+                getOfflinePlayer = (gameProfile -> {
+                    try {
+                        Object nameAndId = nameAndIdConstructor.newInstance(gameProfile);
+                        return  (OfflinePlayer) methodGetOfflinePlayer.invoke(getServer(), nameAndId);
+                    } catch (IllegalAccessException | InvocationTargetException | InstantiationException e1) {
+                        if (uuidGetterHandle != null) {
+                            try {
+                                logDebug("Could not create offline player for " + uuidGetterHandle.invoke(gameProfile) + "! " + e.getMessage());
+                            } catch (Throwable e2) {
+                                logDebug("Could not create offline player. " + e.getMessage());
+                                logDebug("And uuid lookup failed: " + e2.getMessage());
+                            }
+                        }
+                    }
+                    return null;
+                });
+            } catch (NoSuchMethodException | ClassNotFoundException e2) {
+                if (storeUnknownPlayers) {
+                    getLogger().log(Level.WARNING, "Could not load method required to store unknown players. Disabling it!", e);
+                    storeUnknownPlayers = false;
+                }
             }
         }
         playerDataCache = CacheBuilder.newBuilder().expireAfterWrite(queryTimeout, TimeUnit.SECONDS).build();
@@ -199,6 +253,14 @@ public final class SyncInv extends JavaPlugin {
         }
 
         getServer().getPluginManager().registerEvents(new PlayerJoinListener(this), this);
+        try {
+            Class.forName("io.papermc.paper.event.connection.PlayerConnectionValidateLoginEvent");
+            getServer().getPluginManager().registerEvents(new PlayerConnectionValidateLoginListener(this), this);
+            logDebug("Using Paper connection validate login event");
+        } catch (ClassNotFoundException e) {
+            getServer().getPluginManager().registerEvents(new PlayerLoginListener(this), this);
+            logDebug("Using legacy login event");
+        }
         getServer().getPluginManager().registerEvents(new PlayerQuitListener(this), this);
         getServer().getPluginManager().registerEvents(new PlayerFreezeListener(this), this);
         getServer().getPluginManager().registerEvents(new MapCreationListener(this), this);
@@ -367,15 +429,11 @@ public final class SyncInv extends JavaPlugin {
                 fieldWorldMap.setAccessible(true);
                 Object worldMap = fieldWorldMap.get(map);
                 try {
-                    fieldMapColor = worldMap.getClass().getField("g");
-                } catch (NoSuchFieldException e) {
-                    try {
-                        fieldMapColor = worldMap.getClass().getField("colors");
-                    } catch (NoSuchFieldException e1) {
-                        for (Field field : worldMap.getClass().getFields()) {
-                            if (field.getType() == byte[].class) {
-                                fieldMapColor = field;
-                            }
+                    fieldMapColor = worldMap.getClass().getField("colors");
+                } catch (NoSuchFieldException e1) {
+                    for (Field field : worldMap.getClass().getFields()) {
+                        if (field.getType() == byte[].class) {
+                            fieldMapColor = field;
                         }
                     }
                 }
@@ -581,10 +639,9 @@ public final class SyncInv extends JavaPlugin {
                     OfflinePlayer offlinePlayer = getServer().getOfflinePlayer(data.getPlayerId());
                     if (storeUnknownPlayers && !offlinePlayer.hasPlayedBefore()) {
                         if (offlinePlayer.getName() == null) {
-                            try {
-                                offlinePlayer = (OfflinePlayer) methodGetOfflinePlayer.invoke(getServer(), new GameProfile(data.getPlayerId(), data.getPlayerName()));
-                            } catch (IllegalAccessException | InvocationTargetException e) {
-                                logDebug("Could not create offline player for " + data.getPlayerId() + "! " + e.getMessage());
+                            OfflinePlayer internalOfflinePlayer = getOfflinePlayer.apply(new GameProfile(data.getPlayerId(), data.getPlayerName()));
+                            if (internalOfflinePlayer != null) {
+                                offlinePlayer = internalOfflinePlayer;
                             }
                         }
                         createdNewFile = createNewEmptyData(offlinePlayer.getUniqueId());
@@ -729,7 +786,7 @@ public final class SyncInv extends JavaPlugin {
                     }
                 }
                 if (shouldSync(SyncType.HEALTH)) {
-                    player.getAttribute(Attribute.GENERIC_MAX_HEALTH).setBaseValue(data.getMaxHealth());
+                    player.setMaxHealth(data.getMaxHealth());
                 }
                 if (shouldSync(SyncType.HUNGER))
                     player.setFoodLevel(data.getFoodLevel());
