@@ -178,7 +178,7 @@ public final class SyncInv extends JavaPlugin {
 
         playerDataFolder = getServer().getMinecraftVersion().startsWith("1.")
                 ? new File(getServer().getWorlds().get(0).getWorldFolder(), "playerdata")
-                : new File(new File(getServer().getWorlds().get(0).getWorldFolder(), "players"), "data");
+                : getServer().getLevelDirectory().resolve("players", "data").toFile();
 
         MethodHandle tempUUIDGetterHandle = null;
         try {
