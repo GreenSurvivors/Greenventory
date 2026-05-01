@@ -8,6 +8,8 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockDamageEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.entity.EntityPickupItemEvent;
+import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
@@ -17,7 +19,6 @@ import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerExpChangeEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
-import org.bukkit.event.player.PlayerPickupItemEvent;
 
 /*
  * SyncInv
@@ -69,10 +70,10 @@ public class PlayerFreezeListener implements Listener {
     }
 
     @EventHandler(ignoreCancelled = true)
-    public void onPlayerPickupItem(PlayerPickupItemEvent e) {
-        if(plugin.isLocked(e.getPlayer().getUniqueId())) {
+    public void onPlayerPickupItem(EntityPickupItemEvent e) {
+        if (e.getEntity() instanceof Player && plugin.isLocked(e.getEntity().getUniqueId())) {
             e.setCancelled(true);
-            e.getPlayer().sendMessage(plugin.getLang("cant-pickup-items"));
+            e.getEntity().sendMessage(plugin.getLang("cant-pickup-items"));
         }
     }
 
@@ -87,6 +88,13 @@ public class PlayerFreezeListener implements Listener {
     @EventHandler(ignoreCancelled = true)
     public void onPlayerDamage(EntityDamageEvent e) {
         if(e.getEntity() instanceof Player && plugin.isLocked(e.getEntity().getUniqueId())) {
+            e.setCancelled(true);
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onPlayerDeath(PlayerDeathEvent e) {
+        if (plugin.isLocked(e.getPlayer().getUniqueId())) {
             e.setCancelled(true);
         }
     }
