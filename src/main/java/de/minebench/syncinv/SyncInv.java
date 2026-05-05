@@ -8,8 +8,6 @@ import com.lishid.openinv.OpenInv;
 import com.lishid.openinv.command.OpenInvCommand;
 import com.mojang.authlib.GameProfile;
 import de.greensurvivors.dienstmodus.DienstmodusApi;
-import de.greensurvivors.dienstmodus.DienstmodusData;
-import de.greensurvivors.dienstmodus.InventoryLoadException;
 import de.minebench.syncinv.listeners.MapCreationListener;
 import de.minebench.syncinv.listeners.PlayerConnectionValidateLoginListener;
 import de.minebench.syncinv.listeners.PlayerFreezeListener;
@@ -937,7 +935,7 @@ public final class SyncInv extends JavaPlugin {
                 }
 
                 if (shouldSync(SyncType.DIENSTMODUS) && data instanceof PlayerDataDienstmodus) {
-                    DienstmodusApi.setData(((PlayerDataDienstmodus)data).dienstmodus);
+                    DienstmodusApi.setPartialData(((PlayerDataDienstmodus)data).dienstmodus);
                 }
 
                 finished.run();
@@ -1055,15 +1053,14 @@ public final class SyncInv extends JavaPlugin {
     public PlayerData getData(Player player) {
         PlayerData data;
         if (shouldSync(SyncType.DIENSTMODUS)) {
-            try {
-                DienstmodusData dmData = DienstmodusApi.getData(player.getUniqueId());
-                data = new PlayerDataDienstmodus(player, getLastSeen(player.getUniqueId(), player.isOnline()), dmData);
-            } catch (InventoryLoadException e) {
-                this.getLogger().log(Level.SEVERE, "Couldn't load Dienstmodus data for " + player.getName() + ", uuid: " + player.getUniqueId(), e);
+            data = DienstmodusApi.getPartialData(player.getUniqueId())
+                .thenApply(dmData ->
+                    (PlayerData)new PlayerDataDienstmodus(player, getLastSeen(player.getUniqueId(), player.isOnline()), dmData)
+                ).exceptionally(ex -> {
+                    this.getLogger().log(Level.SEVERE, "Couldn't load Dienstmodus data for " + player.getName() + ", uuid: " + player.getUniqueId(), ex);
 
-                data = new PlayerData(player, getLastSeen(player.getUniqueId(), player.isOnline()));
-            }
-
+                    return new PlayerData(player, getLastSeen(player.getUniqueId(), player.isOnline()));
+                }).join();
         } else {
             data = new PlayerData(player, getLastSeen(player.getUniqueId(), player.isOnline()));
         }

@@ -110,7 +110,7 @@ sync:
   # Should the plugin try to keep maps in sync?
   maps: true
   # Should sync Dienstmodus inventories?
-  dienstmodus: true
+  dienstmodus: false
 
 # Language settings
 lang:
