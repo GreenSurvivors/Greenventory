@@ -9,7 +9,6 @@ import com.lishid.openinv.command.OpenInvCommand;
 import com.mojang.authlib.GameProfile;
 import de.greensurvivors.dienstmodus.DienstmodusApi;
 import de.greensurvivors.dienstmodus.DienstmodusData;
-import de.greensurvivors.dienstmodus.InventoryLoadException;
 import de.minebench.syncinv.listeners.MapCreationListener;
 import de.minebench.syncinv.listeners.PlayerConnectionValidateLoginListener;
 import de.minebench.syncinv.listeners.PlayerFreezeListener;
@@ -876,7 +875,7 @@ public final class SyncInv extends JavaPlugin {
                 }
 
                 if (shouldSync(SyncType.DIENSTMODUS) && data instanceof PlayerDataDienstmodus) {
-                    DienstmodusApi.setData(((PlayerDataDienstmodus)data).dienstmodus);
+                    DienstmodusApi.setData(((PlayerDataDienstmodus)data).dienstmodusData());
                 }
 
                 finished.run();
@@ -1008,7 +1007,7 @@ public final class SyncInv extends JavaPlugin {
     }
 
     public PlayerData getData(Player player) {
-        byte[] persistentData = null;
+        byte @Nullable [] persistentData = null;
         if (shouldSync(SyncType.PERSISTENT_DATA)) {
             PersistentDataContainer pdc = player.getPersistentDataContainer();
             try {
@@ -1029,7 +1028,6 @@ public final class SyncInv extends JavaPlugin {
 
                 data = new PlayerData(player, getLastSeen(player.getUniqueId(), player.isOnline()), persistentData);
             }
-
         } else {
             data = new PlayerData(player, getLastSeen(player.getUniqueId(), player.isOnline()), persistentData);
         }
