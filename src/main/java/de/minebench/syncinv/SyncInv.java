@@ -11,15 +11,16 @@ import de.greensurvivors.dienstmodus.DienstmodusApi;
 import de.greensurvivors.dienstmodus.DienstmodusData;
 import de.greensurvivors.dienstmodus.InventoryLoadException;
 import de.minebench.syncinv.listeners.MapCreationListener;
+import de.minebench.syncinv.listeners.PlayerConnectionValidateLoginListener;
 import de.minebench.syncinv.listeners.PlayerFreezeListener;
 import de.minebench.syncinv.listeners.PlayerJoinListener;
+import de.minebench.syncinv.listeners.PlayerLoginListener;
 import de.minebench.syncinv.listeners.PlayerQuitListener;
 import de.minebench.syncinv.messenger.*;
-import lombok.Getter;
+import org.apache.maven.artifact.versioning.ComparableVersion;
 import org.bukkit.*;
 import org.bukkit.advancement.Advancement;
 import org.bukkit.advancement.AdvancementProgress;
-import org.bukkit.attribute.Attribute;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -36,6 +37,9 @@ import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -43,6 +47,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import java.util.logging.Level;
 
 /*
@@ -74,13 +79,11 @@ public final class SyncInv extends JavaPlugin {
     /**
      * Reference to the OpenInv plugin to load data for the query option
      */
-    @Getter
     private OpenInv openInv = null;
 
     /**
      * The messenger for communications between the servers
      */
-    @Getter
     private ServerMessenger messenger;
 
     /**
@@ -97,7 +100,7 @@ public final class SyncInv extends JavaPlugin {
      * Sync data with all servers in a group when a player logs out
      */
     private boolean syncWithGroupOnLogout;
-    
+
     /**
      * Store player data even if the player never joined the server
      */
@@ -106,7 +109,6 @@ public final class SyncInv extends JavaPlugin {
     /**
      * The amount of seconds we should wait for a query to stopTimeout
      */
-    @Getter
     private int queryTimeout;
 
     /**
@@ -132,29 +134,21 @@ public final class SyncInv extends JavaPlugin {
     /**
      * Whether or not the plugin is currently disabling
      */
-    @Getter
     private boolean disabling = false;
 
     /**
      * Whether or not the plugin is in debugging mode
      */
-    @Getter
     private boolean debug;
 
     /**
      * The id of the newest map that was seen on this server
      */
-    @Getter
     private int newestMap = 0;
-    
+
     // Unknown player storing
-    private Method methodGetOfflinePlayer = null;
+    private Function<GameProfile, OfflinePlayer> getOfflinePlayer = null;
     private Method methodGetHandle = null;
-    private Method methodSetPositionRaw;
-    private Field fieldYaw = null;
-    private Field fieldPitch = null;
-    private Method methodSetYaw = null;
-    private Method methodSetPitch = null;
 
     // Offline player health setting
     private Method methodSetHealth;
@@ -170,14 +164,63 @@ public final class SyncInv extends JavaPlugin {
     public void onEnable() {
         // Plugin startup logic
         loadConfig();
-        
-        playerDataFolder = new File(getServer().getWorlds().get(0).getWorldFolder(), "playerdata");
+
+        playerDataFolder = getServer().getMinecraftVersion().startsWith("1.")
+                ? new File(getServer().getWorlds().get(0).getWorldFolder(), "playerdata")
+                : new File(new File(getServer().getWorlds().get(0).getWorldFolder(), "players"), "data");
+
+        MethodHandle tempUUIDGetterHandle = null;
         try {
-            methodGetOfflinePlayer = getServer().getClass().getMethod("getOfflinePlayer", GameProfile.class);
+            tempUUIDGetterHandle = MethodHandles.privateLookupIn(GameProfile.class, MethodHandles.lookup()).findGetter(GameProfile.class, "id", UUID.class);
+        } catch (NoSuchFieldException | IllegalAccessException e) {
+            getLogger().log(Level.SEVERE, "Could not get MethodHandle to access uuids from GameProfile. If anything happens, we will be unable to log the uuids!", e);
+        }
+        // java being java. We can't assign a final variable in a try block.
+        final MethodHandle uuidGetterHandle = tempUUIDGetterHandle;
+
+        try {
+            Method methodGetOfflinePlayer = getServer().getClass().getMethod("getOfflinePlayer", GameProfile.class);
+            getOfflinePlayer = (gameProfile -> {
+                try {
+                    return (OfflinePlayer) methodGetOfflinePlayer.invoke(getServer(), gameProfile);
+                } catch (IllegalAccessException | InvocationTargetException e) {
+                    if (uuidGetterHandle != null) {
+                        try {
+                            logDebug("Could not create offline player for " + uuidGetterHandle.invoke(gameProfile) + "! " + e.getMessage());
+                        } catch (Throwable ex) {
+                            logDebug("Could not create offline player. " + e.getMessage());
+                            logDebug("And uuid lookup failed: " + ex.getMessage());
+                        }
+                    }
+                }
+                return null;
+            });
         } catch (NoSuchMethodException e) {
-            if (storeUnknownPlayers) {
-                getLogger().log(Level.WARNING, "Could not load method required to store unknown players. Disabling it!", e);
-                storeUnknownPlayers = false;
+            try {
+                Class nameAndIdClass = Class.forName("net.minecraft.server.players.NameAndId");
+                Constructor nameAndIdConstructor = nameAndIdClass.getConstructor(GameProfile.class);
+                Method methodGetOfflinePlayer = getServer().getClass().getMethod("getOfflinePlayer", nameAndIdClass);
+                getOfflinePlayer = (gameProfile -> {
+                    try {
+                        Object nameAndId = nameAndIdConstructor.newInstance(gameProfile);
+                        return (OfflinePlayer) methodGetOfflinePlayer.invoke(getServer(), nameAndId);
+                    } catch (IllegalAccessException | InvocationTargetException | InstantiationException e1) {
+                        if (uuidGetterHandle != null) {
+                            try {
+                                logDebug("Could not create offline player for " + uuidGetterHandle.invoke(gameProfile) + "! " + e.getMessage());
+                            } catch (Throwable e2) {
+                                logDebug("Could not create offline player. " + e.getMessage());
+                                logDebug("And uuid lookup failed: " + e2.getMessage());
+                            }
+                        }
+                    }
+                    return null;
+                });
+            } catch (NoSuchMethodException | ClassNotFoundException e2) {
+                if (storeUnknownPlayers) {
+                    getLogger().log(Level.WARNING, "Could not load method required to store unknown players. Disabling it!", e);
+                    storeUnknownPlayers = false;
+                }
             }
         }
         playerDataCache = CacheBuilder.newBuilder().expireAfterWrite(queryTimeout, TimeUnit.SECONDS).build();
@@ -199,12 +242,28 @@ public final class SyncInv extends JavaPlugin {
         }
 
         getServer().getPluginManager().registerEvents(new PlayerJoinListener(this), this);
+        try {
+            Class.forName("io.papermc.paper.event.connection.PlayerConnectionValidateLoginEvent");
+            getServer().getPluginManager().registerEvents(new PlayerConnectionValidateLoginListener(this), this);
+            logDebug("Using Paper connection validate login event");
+        } catch (ClassNotFoundException e) {
+            getServer().getPluginManager().registerEvents(new PlayerLoginListener(this), this);
+            logDebug("Using legacy login event");
+        }
         getServer().getPluginManager().registerEvents(new PlayerQuitListener(this), this);
         getServer().getPluginManager().registerEvents(new PlayerFreezeListener(this), this);
         getServer().getPluginManager().registerEvents(new MapCreationListener(this), this);
         getServer().getMessenger().registerOutgoingPluginChannel(this, "BungeeCord");
         getCommand("syncinv").setExecutor(this);
         if (openInv != null) {
+            // ensure minimum OpenInv version is present.
+            if (storeUnknownPlayers && new ComparableVersion(openInv.getPluginMeta().getVersion()).compareTo(new ComparableVersion("5.1.7")) < 0) {
+                getLogger().severe(
+                    "Warning: You are using a not supported Version of OpenInv! " +
+                    "Please update to Version 5.1.7 or higher! " +
+                    "With the wrong version version present storing unknown players will fail!");
+            }
+
             OpenInvCommand openInvCommand = (OpenInvCommand) openInv.getCommand("openinv").getExecutor();
             CommandExecutor forwarding = (sender, command, label, args) -> {
                 if (sender instanceof Player && args.length > 0 && (!getMessenger().isAllowedToBeAlone() || !getMessenger().isAlone())) {
@@ -301,7 +360,7 @@ public final class SyncInv extends JavaPlugin {
         syncWithGroupOnLogout = getConfig().getBoolean("sync-with-group-on-logout");
 
         storeUnknownPlayers = getConfig().getBoolean("store-unknown-players");
-        
+
         queryTimeout = getConfig().getInt("query-timeout");
         applyTimedOutQueries = getConfig().getBoolean("apply-timed-out-queries");
 
@@ -367,15 +426,11 @@ public final class SyncInv extends JavaPlugin {
                 fieldWorldMap.setAccessible(true);
                 Object worldMap = fieldWorldMap.get(map);
                 try {
-                    fieldMapColor = worldMap.getClass().getField("g");
-                } catch (NoSuchFieldException e) {
-                    try {
-                        fieldMapColor = worldMap.getClass().getField("colors");
-                    } catch (NoSuchFieldException e1) {
-                        for (Field field : worldMap.getClass().getFields()) {
-                            if (field.getType() == byte[].class) {
-                                fieldMapColor = field;
-                            }
+                    fieldMapColor = worldMap.getClass().getField("colors");
+                } catch (NoSuchFieldException e1) {
+                    for (Field field : worldMap.getClass().getFields()) {
+                        if (field.getType() == byte[].class) {
+                            fieldMapColor = field;
                         }
                     }
                 }
@@ -390,22 +445,6 @@ public final class SyncInv extends JavaPlugin {
                 getLogger().log(Level.WARNING, "Could not load field required for map syncing. Disabling it!", e);
                 disableSync(SyncType.MAPS);
             }
-        }
-
-        // Make sure the world "world" exists so that we can store unknown players without issues
-        if (storeUnknownPlayers && getServer().getWorld("world") == null && getConfig().getBoolean("create-world")) {
-            getLogger().log(Level.INFO, "No world with the name 'world' exists while 'store-unknown-players' is enabled. This world is needed for that functionality to work correctly, creating it... (can be disabled with 'create-world' in the config)");
-            World world = getServer().createWorld(new WorldCreator("world")
-                    .type(WorldType.FLAT)
-                    .generateStructures(false));
-            world.setAutoSave(false);
-            world.setViewDistance(2);
-            world.setKeepSpawnInMemory(false);
-            world.setGameRule(GameRule.DO_WEATHER_CYCLE, false);
-            world.setGameRule(GameRule.DO_MOB_SPAWNING, false);
-            world.setGameRule(GameRule.DO_FIRE_TICK, false);
-            world.setGameRule(GameRule.DO_DAYLIGHT_CYCLE, false);
-            world.setGameRule(GameRule.DISABLE_RAIDS, true);
         }
 
         if (!getServer().getPluginManager().isPluginEnabled("Dienstmodus")) {
@@ -426,14 +465,14 @@ public final class SyncInv extends JavaPlugin {
 
     /**
      * Get a language message from the config and replace variables in it
-     * @param key The key of the message (lang.<key>)
+     * @param key          The key of the message (lang.<key>)
      * @param replacements An array of variables to be replaced with certain strings in the format [var,repl,var,repl,...]
      * @return The message string with colorcodes and variables replaced
      */
     public String getLang(String key, String... replacements) {
         String msg = ChatColor.translateAlternateColorCodes('&', getConfig().getString("lang." + key, getName() + ": &cMissing language key &6" + key));
         for (int i = 0; i + 1 < replacements.length; i += 2) {
-            msg = msg.replace("%" + replacements[i] + "%", replacements[i+1]);
+            msg = msg.replace("%" + replacements[i] + "%", replacements[i + 1]);
         }
         return msg;
     }
@@ -537,7 +576,7 @@ public final class SyncInv extends JavaPlugin {
     /**
      * Connect a player to a bungee server
      * @param playerId The UUID of the player
-     * @param server The name of the server
+     * @param server   The name of the server
      */
     public void connectToServer(UUID playerId, String server) {
         Player player = getServer().getPlayer(playerId);
@@ -557,34 +596,33 @@ public final class SyncInv extends JavaPlugin {
         if (data == null)
             return;
 
-        if (data.getDataVersion() != getServer().getUnsafe().getDataVersion()) {
+        if (data.dataVersion() != getServer().getUnsafe().getDataVersion()) {
             getLogger().log(Level.WARNING, "Received data with "
-                    + (data.getDataVersion() < getServer().getUnsafe().getDataVersion() ? "older" : "newer")
-                    + " Minecraft data version (" + data.getDataVersion() + ") than this server (" + getServer().getUnsafe().getDataVersion() + "). Trying to apply anyways but there will most likely be errors! Please try running the same Server version on all synced servers.");
+                    + (data.dataVersion() < getServer().getUnsafe().getDataVersion() ? "older" : "newer")
+                    + " Minecraft data version (" + data.dataVersion() + ") than this server (" + getServer().getUnsafe().getDataVersion() + "). Trying to apply anyways but there will most likely be errors! Please try running the same Server version on all synced servers.");
         }
 
         runSync(() -> {
-            Player player = getServer().getPlayer(data.getPlayerId());
+            Player player = getServer().getPlayer(data.playerId());
             boolean createdNewFile = false;
-            if ((player == null || !player.isOnline()) && getMessenger().hasQuery(data.getPlayerId())) {
-                long localLastSeen = getLastSeen(data.getPlayerId(), true);
-                if (localLastSeen < data.getLastSeen()) {
+            if ((player == null || !player.isOnline()) && getMessenger().hasQuery(data.playerId())) {
+                long localLastSeen = getLastSeen(data.playerId(), true);
+                if (localLastSeen < data.lastSeen()) {
                     cacheData(data, finished);
-                    logDebug("Player " + data.getPlayerId() + " has query but was not fully online yet! Caching data " + data.getLastSeen() + "...");
+                    logDebug("Player " + data.playerId() + " has query but was not fully online yet! Caching data " + data.lastSeen() + "...");
                 } else {
-                    logDebug("Not caching data for player " + data.getPlayerId() + " as our local player data is not older (" + localLastSeen + ") than the one provided! (" + data.getLastSeen() + ")");
+                    logDebug("Not caching data for player " + data.playerId() + " as our local player data is not older (" + localLastSeen + ") than the one provided! (" + data.lastSeen() + ")");
                 }
                 return;
             }
             if (getOpenInv() != null) {
                 if (player == null) {
-                    OfflinePlayer offlinePlayer = getServer().getOfflinePlayer(data.getPlayerId());
+                    OfflinePlayer offlinePlayer = getServer().getOfflinePlayer(data.playerId());
                     if (storeUnknownPlayers && !offlinePlayer.hasPlayedBefore()) {
                         if (offlinePlayer.getName() == null) {
-                            try {
-                                offlinePlayer = (OfflinePlayer) methodGetOfflinePlayer.invoke(getServer(), new GameProfile(data.getPlayerId(), data.getPlayerName()));
-                            } catch (IllegalAccessException | InvocationTargetException e) {
-                                logDebug("Could not create offline player for " + data.getPlayerId() + "! " + e.getMessage());
+                            OfflinePlayer internalOfflinePlayer = getOfflinePlayer.apply(new GameProfile(data.playerId(), data.playerName()));
+                            if (internalOfflinePlayer != null) {
+                                offlinePlayer = internalOfflinePlayer;
                             }
                         }
                         createdNewFile = createNewEmptyData(offlinePlayer.getUniqueId());
@@ -592,49 +630,6 @@ public final class SyncInv extends JavaPlugin {
                     player = getOpenInv().loadPlayer(offlinePlayer);
                     if (player == null) {
                         logDebug("Unable to load player " + offlinePlayer.getName() + "/" + offlinePlayer.getUniqueId() + " data with OpenInv");
-                    } else if (createdNewFile) {
-                        try {
-                            if (methodGetHandle == null) {
-                                methodGetHandle = player.getClass().getMethod("getHandle");
-                            }
-                            Object entity = methodGetHandle.invoke(player);
-                            if (methodSetPositionRaw == null || (fieldYaw == null && methodSetYaw == null) || (fieldPitch == null || methodSetPitch == null)) {
-                                try {
-                                    // should be the "go-to" since 1.20.5+ for paper
-                                    methodSetPositionRaw = entity.getClass().getMethod("setPositionRaw", double.class, double.class, double.class);
-                                } catch (NoSuchMethodException e) {
-                                    // TODO: Better obfuscation support <-- use paper's userDev
-                                    // 1.18-1.18.2 was "e", would become "o" until 1.19.2 and is now (1.20.6 when not Moj-Mapped) "p"
-                                    methodSetPositionRaw = entity.getClass().getMethod("p", double.class, double.class, double.class);
-                                }
-                                try {
-                                    fieldYaw = entity.getClass().getField("yaw");
-                                    fieldPitch = entity.getClass().getField("pitch");
-                                } catch (NoSuchFieldException e) {
-                                    try {
-                                        methodSetYaw = entity.getClass().getMethod("setYRot", float.class);
-                                        methodSetPitch = entity.getClass().getMethod("setYRot", float.class);
-                                    } catch (NoSuchMethodException ignored) {}
-                                }
-                            }
-                            Location spawn = getServer().getWorlds().get(0).getSpawnLocation();
-                            methodSetPositionRaw.invoke(entity, spawn.getX(), spawn.getY(), spawn.getZ());
-                            if (fieldYaw != null) {
-                                fieldYaw.set(entity, spawn.getYaw());
-                            } else if (methodSetYaw != null) {
-                                methodSetYaw.invoke(entity, spawn.getYaw());
-                            }
-                            if (fieldPitch != null) {
-                                fieldPitch.set(entity, spawn.getPitch());
-                            } else if (methodSetPitch != null) {
-                                methodSetPitch.invoke(entity, spawn.getPitch());
-                            }
-                        } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
-                            getLogger().log(Level.WARNING, "Error while trying to set location of an unknown player. Disabling unknown player storage it!", e);
-                            storeUnknownPlayers = false;
-                            player = null;
-                            getOpenInv().unload(offlinePlayer);
-                        }
                     }
                 } else if (!getOpenInv().disableSaving() && getOpenInv().isPlayerLoaded(player.getUniqueId())) {
                     Player openInvLoadedPlayer = getOpenInv().loadPlayer(player);
@@ -646,10 +641,10 @@ public final class SyncInv extends JavaPlugin {
                 }
             }
             if (player == null) {
-                logDebug("Could not apply data for player " + data.getPlayerId() + " as he isn't online and "
+                logDebug("Could not apply data for player " + data.playerId() + " as he isn't online and "
                         + (getOpenInv() == null ? "this server doesn't have OpenInv installed!" : "never was online on this server before!"));
                 if (createdNewFile) {
-                    getPlayerDataFile(data.getPlayerId()).delete();
+                    getPlayerDataFile(data.playerId()).delete();
                 }
                 return;
             }
@@ -673,88 +668,89 @@ public final class SyncInv extends JavaPlugin {
                     player.resetMaxHealth();
 
                 if (shouldSync(SyncType.EXPERIENCE)) {
-                    player.setTotalExperience(data.getTotalExperience());
-                    player.setLevel(data.getLevel());
-                    player.setExp(data.getExp());
+                    player.setTotalExperience(data.totalExperience());
+                    player.setLevel(data.level());
+                    player.setExp(data.exp());
                 }
                 // Try to fix the maps if we should do it
                 if (shouldSync(SyncType.MAPS)) {
-                    for (MapData mapData : data.getMaps()) {
-                        logDebug("Found map " + mapData.getId() + " in inventory");
-                        checkMap(mapData.getId());
+                    for (MapData mapData : data.maps()) {
+                        logDebug("Found map " + mapData.id() + " in inventory");
+                        checkMap(mapData.id());
                         try {
-                            logDebug("Writing data of map " + mapData.getId());
-                            MapView map = getServer().getMap(mapData.getId());
+                            logDebug("Writing data of map " + mapData.id());
+                            MapView map = getServer().getMap(mapData.id());
                             if (map != null) {
                                 Object worldMap = fieldWorldMap.get(map);
-                                map.setCenterX(mapData.getCenterX());
-                                map.setCenterZ(mapData.getCenterZ());
-                                map.setScale(mapData.getScale());
-                                fieldMapColor.set(worldMap, mapData.getColors());
+                                map.setCenterX(mapData.centerX());
+                                map.setCenterZ(mapData.centerZ());
+                                map.setScale(mapData.scale());
+                                fieldMapColor.set(worldMap, mapData.colors());
                                 try {
                                     // Newer map info
-                                    map.setLocked(mapData.isLocked());
-                                    map.setTrackingPosition(mapData.isTrackingPosition());
-                                    map.setUnlimitedTracking(mapData.isUnlimitedTracking());
-                                } catch (NoSuchMethodError ignored) {}
+                                    map.setLocked(mapData.locked());
+                                    map.setTrackingPosition(mapData.trackingPosition());
+                                    map.setUnlimitedTracking(mapData.unlimitedTracking());
+                                } catch (NoSuchMethodError ignored) {
+                                }
 
-                                World world = getServer().getWorld(mapData.getWorldId());
+                                World world = getServer().getWorld(mapData.worldId());
                                 if (world != null) {
                                     map.setWorld(world);
                                 }
-                                fieldMapWorldId.set(worldMap, mapData.getWorldId()); // plugin API doesn't change UUID on world set so set it always
+                                fieldMapWorldId.set(worldMap, mapData.worldId()); // plugin API doesn't change UUID on world set so set it always
                                 // Workaround for map not showing directly after creating it
                                 forceRender(map);
                                 player.sendMap(map);
                             }
                         } catch (IllegalAccessException e) {
-                            getLogger().log(Level.SEVERE, "Could not access field in WorldMap class for " + mapData.getId() + "! ", e);
+                            getLogger().log(Level.SEVERE, "Could not access field in WorldMap class for " + mapData.id() + "! ", e);
                         } catch (Exception e) {
-                            getLogger().log(Level.SEVERE, "Error while trying to store map " + mapData.getId() + "! ", e);
+                            getLogger().log(Level.SEVERE, "Error while trying to store map " + mapData.id() + "! ", e);
                         }
                     }
                 }
 
-                logDebug("Applying data for " + player.getName() + " (" + data.getLastSeen() + ")");
+                logDebug("Applying data for " + player.getName() + " (" + data.lastSeen() + ")");
                 if (shouldSync(SyncType.INVENTORY))
                     player.getInventory().setContents(data.getInventoryContents());
                 if (shouldSync(SyncType.ENDERCHEST))
                     player.getEnderChest().setContents(data.getEnderchestContents());
                 if (shouldSync(SyncType.GAMEMODE)) {
-                    if (data.getGamemode() != null) {
-                        player.setGameMode(data.getGamemode());
+                    if (data.gamemode() != null) {
+                        player.setGameMode(data.gamemode());
                     } else {
                         getLogger().log(Level.WARNING, "Data of " + player.getName() + " did not contain gamemode! Setting it to server default " + getServer().getDefaultGameMode());
                         player.setGameMode(getServer().getDefaultGameMode());
                     }
                 }
                 if (shouldSync(SyncType.HEALTH)) {
-                    player.getAttribute(Attribute.GENERIC_MAX_HEALTH).setBaseValue(data.getMaxHealth());
+                    player.setMaxHealth(data.maxHealth());
                 }
                 if (shouldSync(SyncType.HUNGER))
-                    player.setFoodLevel(data.getFoodLevel());
+                    player.setFoodLevel(data.foodLevel());
                 if (shouldSync(SyncType.SATURATION))
-                    player.setSaturation(data.getSaturation());
+                    player.setSaturation(data.saturation());
                 if (shouldSync(SyncType.EXHAUSTION))
-                    player.setExhaustion(data.getExhaustion());
+                    player.setExhaustion(data.exhaustion());
                 if (shouldSync(SyncType.AIR)) {
-                    player.setMaximumAir(data.getMaxAir());
-                    player.setRemainingAir(data.getRemainingAir());
+                    player.setMaximumAir(data.maxAir());
+                    player.setRemainingAir(data.remainingAir());
                 }
                 if (shouldSync(SyncType.FIRE))
-                    player.setFireTicks(data.getFireTicks());
+                    player.setFireTicks(data.fireTicks());
                 if (shouldSync(SyncType.NO_DAMAGE_TICKS)) {
-                    player.setMaximumNoDamageTicks(data.getMaxNoDamageTicks());
-                    player.setNoDamageTicks(data.getNoDamageTicks());
+                    player.setMaximumNoDamageTicks(data.maxNoDamageTicks());
+                    player.setNoDamageTicks(data.noDamageTicks());
                 }
                 if (shouldSync(SyncType.VELOCITY))
-                    player.setVelocity(data.getVelocity());
+                    player.setVelocity(data.velocity());
                 if (shouldSync(SyncType.FALL_DISTANCE))
-                    player.setFallDistance(data.getFallDistance());
-                if (shouldSync(SyncType.PERSISTENT_DATA) && data.getPersistentData() != null) {
+                    player.setFallDistance(data.fallDistance());
+                if (shouldSync(SyncType.PERSISTENT_DATA) && data.persistentData() != null) {
                     try {
                         PersistentDataContainer pdc = player.getPersistentDataContainer();
-                        pdc.readFromBytes(data.getPersistentData(), true);
+                        pdc.readFromBytes(data.persistentData(), true);
                     } catch (IOException e) {
                         getLogger().log(Level.WARNING, "Error while trying to write PersistentDataContainer data. Disabling persistent data syncing!", e);
                         disableSync(SyncType.PERSISTENT_DATA);
@@ -770,9 +766,9 @@ public final class SyncInv extends JavaPlugin {
                     } catch (NullPointerException ignored) {
                         // world is not known
                     }
-                    for (Iterator<Advancement> it = getServer().advancementIterator(); it.hasNext();) {
+                    for (Iterator<Advancement> it = getServer().advancementIterator(); it.hasNext(); ) {
                         Advancement advancement = it.next();
-                        Map<String, Long> awarded = data.getAdvancementProgress().get(advancement.getKey().toString());
+                        Map<String, Long> awarded = data.advancementProgress().get(advancement.getKey().toString());
                         if (awarded != null) {
                             AdvancementProgress progress = player.getAdvancementProgress(advancement);
                             for (String criterion : progress.getAwardedCriteria()) {
@@ -800,7 +796,7 @@ public final class SyncInv extends JavaPlugin {
                     }
                 }
                 if (shouldSyncAny(SyncType.GENERAL_STATISTICS, SyncType.ENTITY_STATISTICS, SyncType.ITEM_STATISTICS, SyncType.BLOCK_STATISTICS)) {
-                    for (Map.Entry<Statistic, Map<String, Integer>> entry : data.getStatistics().rowMap().entrySet()) {
+                    for (Map.Entry<Statistic, Map<String, Integer>> entry : data.statistics().rowMap().entrySet()) {
                         Statistic statistic = entry.getKey();
                         if (!shouldBeSynced(statistic)) {
                             continue;
@@ -844,24 +840,24 @@ public final class SyncInv extends JavaPlugin {
                                     break;
                             }
                         }
-                        }
+                    }
                 }
                 if (player.isOnline()) {
                     if (shouldSync(SyncType.EFFECTS)) {
-                        player.addPotionEffects(data.getPotionEffects());
+                        player.addPotionEffects(data.potionEffects());
                     }
                     if (shouldSync(SyncType.HEALTH)) {
-                        player.setHealthScale(data.getHealthScale());
+                        player.setHealthScale(data.healthScale());
                         player.setHealthScaled(data.isHealthScaled());
-                        player.setHealth(Math.min(data.getHealth(), player.getMaxHealth()));
+                        player.setHealth(Math.min(data.health(), player.getMaxHealth()));
                     }
                     if (shouldSync(SyncType.INVENTORY)) {
-                        player.getInventory().setHeldItemSlot(data.getHeldItemSlot());
+                        player.getInventory().setHeldItemSlot(data.heldItemSlot());
                         player.updateInventory();
                     }
                 } else {
                     if (shouldSync(SyncType.HEALTH)) {
-                        double health = Math.min(data.getHealth(), player.getMaxHealth());
+                        double health = Math.min(data.health(), player.getMaxHealth());
                         try {
                             if (methodGetHandle == null) {
                                 methodGetHandle = player.getClass().getMethod("getHandle");
@@ -885,7 +881,7 @@ public final class SyncInv extends JavaPlugin {
 
                 finished.run();
                 if (getOpenInv() != null && !player.isOnline()) {
-                    File playerDat = getPlayerDataFile(data.getPlayerId());
+                    File playerDat = getPlayerDataFile(data.playerId());
                     // Store original player file modification date to compare after save to catch error while saving as that's not thrown
                     long lastModification = playerDat.lastModified();
 
@@ -893,7 +889,7 @@ public final class SyncInv extends JavaPlugin {
                     player.saveData();
 
                     // Check for temporary file
-                    if (new File(playerDataFolder, data.getPlayerId() + "-.dat").exists()) {
+                    if (new File(playerDataFolder, data.playerId() + "-.dat").exists()) {
                         throw new RuntimeException("Error while trying to save new player data file after creating temp file!");
                     }
 
@@ -903,16 +899,16 @@ public final class SyncInv extends JavaPlugin {
                         throw new RuntimeException("Internal error while trying to save new player data file!");
                     }
                 }
-                setLastSeen(data.getPlayerId(), data.getLastSeen());
+                setLastSeen(data.playerId(), data.lastSeen());
             } catch (Exception e) {
                 getLogger().log(Level.SEVERE, "Error while applying player data of " + player.getName() + "!", e);
-                File playerDat = getPlayerDataFile(data.getPlayerId());
+                File playerDat = getPlayerDataFile(data.playerId());
                 if (playerDat.exists()) {
                     if (createdNewFile) {
                         playerDat.delete();
-                    } else if (playerDat.lastModified() >= data.getLastSeen()) {
+                    } else if (playerDat.lastModified() >= data.lastSeen()) {
                         // Failed to apply data, make sure our locally stored data is older than the newest
-                        setLastSeen(data.getPlayerId(), data.getLastSeen() - 1);
+                        setLastSeen(data.playerId(), data.lastSeen() - 1);
                     }
                 }
             } finally {
@@ -943,6 +939,22 @@ public final class SyncInv extends JavaPlugin {
         map.addRenderer(new EmptyRenderer());
     }
 
+    public OpenInv getOpenInv() {
+        return this.openInv;
+    }
+
+    public ServerMessenger getMessenger() {
+        return this.messenger;
+    }
+
+    public int getQueryTimeout() {
+        return this.queryTimeout;
+    }
+
+    public int getNewestMap() {
+        return this.newestMap;
+    }
+
     private static class EmptyRenderer extends MapRenderer {
         @Override
         public void render(@NotNull MapView map, @NotNull MapCanvas canvas, @NotNull Player player) {
@@ -951,7 +963,7 @@ public final class SyncInv extends JavaPlugin {
     }
 
     private void cacheData(PlayerData data, Runnable finished) {
-        playerDataCache.put(data.getPlayerId(), new AbstractMap.SimpleEntry<>(data, finished));
+        playerDataCache.put(data.playerId(), new AbstractMap.SimpleEntry<>(data, finished));
     }
 
     /**
@@ -996,29 +1008,30 @@ public final class SyncInv extends JavaPlugin {
     }
 
     public PlayerData getData(Player player) {
-        PlayerData data;
-        if (shouldSync(SyncType.DIENSTMODUS)) {
-            try {
-                DienstmodusData dmData = DienstmodusApi.getData(player.getUniqueId());
-                data = new PlayerDataDienstmodus(player, getLastSeen(player.getUniqueId(), player.isOnline()), dmData);
-            } catch (InventoryLoadException e) {
-                this.getLogger().log(Level.SEVERE, "Couldn't load Dienstmodus data for " + player.getName() + ", uuid: " + player.getUniqueId(), e);
-
-                data = new PlayerData(player, getLastSeen(player.getUniqueId(), player.isOnline()));
-            }
-
-        } else {
-            data = new PlayerData(player, getLastSeen(player.getUniqueId(), player.isOnline()));
-        }
-
+        byte[] persistentData = null;
         if (shouldSync(SyncType.PERSISTENT_DATA)) {
             PersistentDataContainer pdc = player.getPersistentDataContainer();
             try {
-                data.setPersistentData(pdc.serializeToBytes());
+                persistentData = pdc.serializeToBytes();
             } catch (IOException e) {
                 getLogger().log(Level.WARNING, "Error while trying to access PersistentDataContainer data (" + pdc + "). Disabling persistent data syncing!", e);
                 disableSync(SyncType.PERSISTENT_DATA);
             }
+        }
+
+        PlayerData data;
+        if (shouldSync(SyncType.DIENSTMODUS)) {
+            try {
+                DienstmodusData dmData = DienstmodusApi.getData(player.getUniqueId());
+                data = new PlayerDataDienstmodus(player, getLastSeen(player.getUniqueId(), player.isOnline()), persistentData, dmData);
+            } catch (IOException e) {
+                this.getLogger().log(Level.SEVERE, "Couldn't load Dienstmodus data for " + player.getName() + ", uuid: " + player.getUniqueId(), e);
+
+                data = new PlayerData(player, getLastSeen(player.getUniqueId(), player.isOnline()), persistentData);
+            }
+
+        } else {
+            data = new PlayerData(player, getLastSeen(player.getUniqueId(), player.isOnline()), persistentData);
         }
 
         if (shouldSync(SyncType.ADVANCEMENTS)) {
@@ -1032,7 +1045,7 @@ public final class SyncInv extends JavaPlugin {
                         awarded.put(criterion, date.getTime());
                     }
                 }
-                data.getAdvancementProgress().put(advancement.getKey().toString(), awarded);
+                data.advancementProgress().put(advancement.getKey().toString(), awarded);
             }
         }
 
@@ -1043,7 +1056,7 @@ public final class SyncInv extends JavaPlugin {
                         if (shouldSync(SyncType.GENERAL_STATISTICS)) {
                             int value = player.getStatistic(statistic);
                             if (value > 0) {
-                                data.getStatistics().put(statistic, "", value);
+                                data.statistics().put(statistic, "", value);
                             }
                         }
                         break;
@@ -1053,9 +1066,10 @@ public final class SyncInv extends JavaPlugin {
                                 try {
                                     int value = player.getStatistic(statistic, entityType);
                                     if (value > 0) {
-                                        data.getStatistics().put(statistic, entityType.name(), value);
+                                        data.statistics().put(statistic, entityType.name(), value);
                                     }
-                                } catch (IllegalArgumentException ignored) {} // This statistic doesn't exist
+                                } catch (IllegalArgumentException ignored) {
+                                } // This statistic doesn't exist
                             }
                         }
                         break;
@@ -1066,9 +1080,10 @@ public final class SyncInv extends JavaPlugin {
                                     try {
                                         int value = player.getStatistic(statistic, blockType);
                                         if (value > 0) {
-                                            data.getStatistics().put(statistic, blockType.name(), value);
+                                            data.statistics().put(statistic, blockType.name(), value);
                                         }
-                                    } catch (IllegalArgumentException ignored) {} // This statistic doesn't exist
+                                    } catch (IllegalArgumentException ignored) {
+                                    } // This statistic doesn't exist
                                 }
                             }
                         }
@@ -1080,9 +1095,10 @@ public final class SyncInv extends JavaPlugin {
                                     try {
                                         int value = player.getStatistic(statistic, itemType);
                                         if (value > 0) {
-                                            data.getStatistics().put(statistic, itemType.name(), value);
+                                            data.statistics().put(statistic, itemType.name(), value);
                                         }
-                                    } catch (IllegalArgumentException ignored) {} // This statistic doesn't exist
+                                    } catch (IllegalArgumentException ignored) {
+                                    } // This statistic doesn't exist
                                 }
                             }
                         }
@@ -1114,15 +1130,12 @@ public final class SyncInv extends JavaPlugin {
                             map.getCenterX(),
                             map.getCenterZ(),
                             map.getScale(),
-                            colors
+                            colors,
+                            map.isLocked(),
+                            map.isTrackingPosition(),
+                            map.isUnlimitedTracking()
                     );
-                    try {
-                        // Newer map info
-                        mapData.setLocked(map.isLocked());
-                        mapData.setTrackingPosition(map.isTrackingPosition());
-                        mapData.setUnlimitedTracking(map.isUnlimitedTracking());
-                    } catch (NoSuchMethodError ignored) {}
-                    data.getMaps().add(mapData);
+                    data.maps().add(mapData);
                 } catch (IllegalAccessException e) {
                     getLogger().log(Level.SEVERE, "Could not access field in WorldMap class for " + map.getId() + "! ", e);
                 }
@@ -1172,7 +1185,7 @@ public final class SyncInv extends JavaPlugin {
      * Make sure that a task runs on the primary thread
      */
     public void runSync(Runnable run) {
-        if(getServer().isPrimaryThread() || disabling) {
+        if (getServer().isPrimaryThread() || disabling) {
             run.run();
         } else {
             getServer().getScheduler().runTask(this, run);
@@ -1183,7 +1196,7 @@ public final class SyncInv extends JavaPlugin {
      * Make sure that a task does not run on the primary thread
      */
     public void runAsync(Runnable run) {
-        if(!getServer().isPrimaryThread() && !disabling) {
+        if (!getServer().isPrimaryThread() && !disabling) {
             getServer().getScheduler().runTaskAsynchronously(this, run);
         } else {
             run.run();

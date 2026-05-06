@@ -3,7 +3,6 @@ package de.minebench.syncinv.messenger;
 import de.minebench.syncinv.PlayerData;
 import de.minebench.syncinv.SyncInv;
 import de.minebench.syncinv.SyncType;
-import lombok.Getter;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Player;
 
@@ -41,15 +40,13 @@ public abstract class ServerMessenger {
     /**
      * The group that this server is in
      */
-    @Getter
     private final String serverGroup;
 
     /**
      * The name of this server, should be the same as in the Bungee's config.yml
      */
-    @Getter
     private final String serverName;
-    
+
     /**
      * The servers that are required to be online to query data
      */
@@ -73,7 +70,6 @@ public abstract class ServerMessenger {
     /**
      * List of channels that this plugin listens on
      */
-    @Getter
     private Set<String> channels = new HashSet<>();
 
     public ServerMessenger(SyncInv plugin) {
@@ -133,7 +129,7 @@ public abstract class ServerMessenger {
                 // players will associate the level up sound from the exp giving with the successful load of the inventory
                 // --> play sound
                 plugin.playLoadSound(query.getPlayerId());
-            } else if (plugin.shouldQueryInventories()){
+            } else if (plugin.shouldQueryInventories()) {
                 sendMessage(youngestServer, query.getTimestamp(), MessageType.GET_DATA, query.getPlayerId()); // Query the player's data
                 query.setTimeoutTask(plugin.runLater(() -> {
                     plugin.sendMessage(query.getPlayerId(), "cant-load-data");
@@ -157,7 +153,7 @@ public abstract class ServerMessenger {
             plugin.logDebug("Tried to query data for " + playerId + " but we are all alone :'(");
             return null;
         }
-        
+
         if (!servers.containsAll(requiredServers)) {
             plugin.logDebug("Tried to query data for " + playerId + " but not all required servers are here :'(");
             return null;
@@ -204,11 +200,11 @@ public abstract class ServerMessenger {
                 || target != null // target is null? Accept message anyways...
                 && !"*".equals(target)
                 && !getServerName().equals(target)
-                && !("group:" + getServerGroup()).equalsIgnoreCase(target) ) {
+                && !("group:" + getServerGroup()).equalsIgnoreCase(target)) {
             // This message is not for us
             return;
         }
-    
+
         servers.add(message.getSender());
 
         UUID playerId = null;
@@ -254,7 +250,7 @@ public abstract class ServerMessenger {
                             queueDataRequest(playerId, message.getSender(), message.getId());
                         }
                         sendMessage(message.getSender(), message.getId(), MessageType.IS_ONLINE, playerId); // Tell the sender
-                    } else if (plugin.getOpenInv() != null){
+                    } else if (plugin.getOpenInv() != null) {
                         OfflinePlayer offlinePlayer = plugin.getServer().getOfflinePlayer(playerId);
                         if (offlinePlayer.hasPlayedBefore()) {
                             // we can ensure here that openInv is using the same player instance as we do and therefor it is safe to unload regardless of openinv saving it or not
@@ -274,24 +270,24 @@ public abstract class ServerMessenger {
 
                 case DATA:
                     PlayerData data = (PlayerData) message.read();
-                    query = queries.get(data.getPlayerId());
-                    if (query != null || plugin.shouldSyncWithGroupOnLogout() && plugin.getLastSeen(data.getPlayerId(), true) < data.getTimeStamp()) {
+                    query = queries.get(data.playerId());
+                    if (query != null || plugin.shouldSyncWithGroupOnLogout() && plugin.getLastSeen(data.playerId(), true) < data.timeStamp()) {
                         if (query != null && query.getTimestamp() > message.getId()) {
                             // Only allow the exact query or newer data to be applied
-                            plugin.logDebug(message.getId() + " Received " + message.getType() + " for " + data.getPlayerId() + " with " + data.getTimeStamp() + " from " + message.getSender() + " targeted at " + target + " but the query timestamp doesn't match! expected: " + query.getTimestamp() + " > received: " + message.getId());
+                            plugin.logDebug(message.getId() + " Received " + message.getType() + " for " + data.playerId() + " with " + data.timeStamp() + " from " + message.getSender() + " targeted at " + target + " but the query timestamp doesn't match! expected: " + query.getTimestamp() + " > received: " + message.getId());
                             break;
                         }
-                        plugin.logDebug(message.getId() + " Received " + message.getType() + " for " + data.getPlayerId() + " from " + message.getSender() + " targeted at " + target + ". Applying it." +
-                                " isQueryNull=" + (query == null) + ", shouldSyncWithGroupOnLogout=" + plugin.shouldSyncWithGroupOnLogout() + ", dataTimestamp=" +  data.getTimeStamp());
+                        plugin.logDebug(message.getId() + " Received " + message.getType() + " for " + data.playerId() + " from " + message.getSender() + " targeted at " + target + ". Applying it." +
+                                " isQueryNull=" + (query == null) + ", shouldSyncWithGroupOnLogout=" + plugin.shouldSyncWithGroupOnLogout() + ", dataTimestamp=" + data.timeStamp());
                         plugin.applyData(data, () -> {
                             if (query != null) {
                                 query.stopTimeout();
-                                queries.remove(data.getPlayerId());
+                                queries.remove(data.playerId());
                             }
                         });
                     } else {
-                        plugin.logDebug(message.getId() + " Received " + message.getType() + " for " + data.getPlayerId() + " from " + message.getSender() + " targeted at " + target + " but we decided to not apply it!"
-                                + " isQueryNull=" + (query == null) + ", shouldSyncWithGroupOnLogout=" + plugin.shouldSyncWithGroupOnLogout() + ", dataTimestamp=" +  data.getTimeStamp());
+                        plugin.logDebug(message.getId() + " Received " + message.getType() + " for " + data.playerId() + " from " + message.getSender() + " targeted at " + target + " but we decided to not apply it!"
+                                + " isQueryNull=" + (query == null) + ", shouldSyncWithGroupOnLogout=" + plugin.shouldSyncWithGroupOnLogout() + ", dataTimestamp=" + data.timeStamp());
                     }
                     break;
 
@@ -356,7 +352,7 @@ public abstract class ServerMessenger {
         if (query.getServers().size() < servers.size()) {
             return false;
         }
-        
+
         if (!query.getServers().keySet().containsAll(servers)
                 || !query.getServers().keySet().containsAll(requiredServers)) {
             return false;
@@ -457,8 +453,8 @@ public abstract class ServerMessenger {
     /**
      * Add a server to the data request queue
      * @param playerId The UUID of the player
-     * @param server The name of the server
-     * @param id The transaction ID this query is associated with
+     * @param server   The name of the server
+     * @param id       The transaction ID this query is associated with
      */
     private void queueDataRequest(UUID playerId, String server, long id) {
         queuedDataRequests.computeIfAbsent(playerId, uuid -> Collections.synchronizedMap(new LinkedHashMap<>())).put(server, id);
@@ -478,12 +474,24 @@ public abstract class ServerMessenger {
      * @param data The player's data
      */
     public void fulfillQueuedDataRequest(PlayerData data) {
-        Map<String, Long> servers = queuedDataRequests.get(data.getPlayerId());
+        Map<String, Long> servers = queuedDataRequests.get(data.playerId());
         if (servers != null) {
-            queuedDataRequests.remove(data.getPlayerId());
+            queuedDataRequests.remove(data.playerId());
             for (Map.Entry<String, Long> entry : servers.entrySet()) {
                 sendMessage(entry.getKey(), entry.getValue(), MessageType.DATA, data);
             }
         }
+    }
+
+    public String getServerGroup() {
+        return this.serverGroup;
+    }
+
+    public String getServerName() {
+        return this.serverName;
+    }
+
+    public Set<String> getChannels() {
+        return this.channels;
     }
 }

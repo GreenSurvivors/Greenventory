@@ -18,22 +18,10 @@ package de.minebench.syncinv;
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import lombok.Data;
 import org.bukkit.map.MapView;
 
 import java.io.Serializable;
 import java.util.UUID;
 
-@Data
-public class MapData implements Serializable {
-    private static final long serialVersionUID = 4376356835175363489L;
-    private final int id;
-    private final UUID worldId;
-    private final int centerX;
-    private final int centerZ;
-    private final MapView.Scale scale;
-    private final byte[] colors;
-    private boolean locked;
-    private boolean trackingPosition;
-    private boolean unlimitedTracking;
-}
+public record MapData(int id, UUID worldId, int centerX, int centerZ, MapView.Scale scale, byte[] colors,
+                      boolean locked, boolean trackingPosition, boolean unlimitedTracking) implements Serializable { }

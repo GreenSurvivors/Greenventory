@@ -20,13 +20,9 @@ package de.minebench.syncinv;
 
 import com.google.common.collect.HashBasedTable;
 import com.google.common.collect.Table;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
 import org.bukkit.GameMode;
 import org.bukkit.Material;
 import org.bukkit.Statistic;
-import org.bukkit.attribute.Attribute;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -43,70 +39,49 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-@ToString
-@Getter
-@Setter
-public class PlayerData implements Serializable {
-    private static final long serialVersionUID = -5703536933548893803L;
-    private final long timeStamp = System.currentTimeMillis();
-    private final int dataVersion;
-    private final UUID playerId;
-    private final String playerName;
-    private final GameMode gamemode;
-    private final int totalExperience;
-    private final int level;
-    private final float exp;
-    private final byte[][] inventory;
-    private final byte[][] enderchest;
-    private final Collection<PotionEffect> potionEffects;
-    private final Set<MapData> maps = new HashSet<>();
-    private final double maxHealth;
-    private final double health;
-    private final boolean isHealthScaled;
-    private final double healthScale;
-    private final int foodLevel;
-    private final float saturation;
-    private final float exhaustion;
-    private final int maxAir;
-    private final int remainingAir;
-    private final int fireTicks;
-    private final int maxNoDamageTicks;
-    private final int noDamageTicks;
-    private final float fallDistance;
-    private final Vector velocity;
-    private final int heldItemSlot;
-    private byte[] persistentData = null;
-    private final Map<String, Map<String, Long>> advancementProgress = new HashMap<>();
-    private final Table<Statistic, String, Integer> statistics = HashBasedTable.create();
-    private final long lastSeen;
+public record PlayerData(long timeStamp, int dataVersion, UUID playerId, String playerName, GameMode gamemode,
+                         int totalExperience, int level, float exp, byte[][] inventory, byte[][] enderchest,
+                         Collection<PotionEffect> potionEffects, Set<MapData> maps, double maxHealth, double health,
+                         boolean isHealthScaled, double healthScale, int foodLevel, float saturation, float exhaustion,
+                         int maxAir, int remainingAir, int fireTicks, int maxNoDamageTicks, int noDamageTicks,
+                         float fallDistance, Vector velocity, int heldItemSlot, byte[] persistentData,
+                         Map<String, Map<String, Long>> advancementProgress,
+                         Table<Statistic, String, Integer> statistics, long lastSeen) implements Serializable {
 
-    PlayerData(Player player, long lastSeen) {
-        this.dataVersion = player.getServer().getUnsafe().getDataVersion();
-        this.playerId = player.getUniqueId();
-        this.playerName = player.getName();
-        this.gamemode = player.getGameMode();
-        this.totalExperience = player.getTotalExperience();
-        this.level = player.getLevel();
-        this.exp = player.getExp();
-        this.inventory = serializeItems(player.getInventory().getContents());
-        this.enderchest = serializeItems(player.getEnderChest().getContents());
-        this.potionEffects = player.getActivePotionEffects();
-        this.maxHealth = player.getAttribute(Attribute.GENERIC_MAX_HEALTH).getBaseValue();
-        this.health = player.getHealth();
-        this.isHealthScaled = player.isHealthScaled();
-        this.healthScale = player.getHealthScale();
-        this.foodLevel = player.getFoodLevel();
-        this.saturation = player.getSaturation();
-        this.exhaustion = player.getExhaustion();
-        this.maxAir = player.getMaximumAir();
-        this.remainingAir = player.getRemainingAir();
-        this.fireTicks = player.getFireTicks();
-        this.maxNoDamageTicks = player.getMaximumNoDamageTicks();
-        this.noDamageTicks = player.getNoDamageTicks();
-        this.velocity = player.getVelocity();
-        this.fallDistance = player.getFallDistance();
-        this.heldItemSlot = player.getInventory().getHeldItemSlot();
-        this.lastSeen = lastSeen;
+    public static PlayerData create(Player player, long lastSeen, byte[] persistentData) {
+        return new PlayerData(
+                System.currentTimeMillis(),
+                player.getServer().getUnsafe().getDataVersion(),
+                player.getUniqueId(),
+                player.getName(),
+                player.getGameMode(),
+                player.getTotalExperience(),
+                player.getLevel(),
+                player.getExp(),
+                serializeItems(player.getInventory().getContents()),
+                serializeItems(player.getEnderChest().getContents()),
+                player.getActivePotionEffects(),
+                new HashSet<>(),
+                player.getMaxHealth(),
+                player.getHealth(),
+                player.isHealthScaled(),
+                player.getHealthScale(),
+                player.getFoodLevel(),
+                player.getSaturation(),
+                player.getExhaustion(),
+                player.getMaximumAir(),
+                player.getRemainingAir(),
+                player.getFireTicks(),
+                player.getMaximumNoDamageTicks(),
+                player.getNoDamageTicks(),
+                player.getFallDistance(),
+                player.getVelocity(),
+                player.getInventory().getHeldItemSlot(),
+                persistentData,
+                new HashMap<>(),
+                HashBasedTable.create(),
+                lastSeen
+        );
     }
 
     public ItemStack[] getInventoryContents() {
