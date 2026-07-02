@@ -10,9 +10,9 @@ plugins {
 
 group = "de.minebench"
 version = buildString {
-    append(project.properties["plugin_version"])
+    append(getProperty("plugin_version"))
 
-    if (project.properties["is_snapshot"].toString().toBoolean()) {
+    if (getProperty("is_snapshot").toBoolean()) {
         append("-Snapshot")
     }
 }
@@ -20,8 +20,8 @@ description = "SyncInv"
 
 java {
     // Configure the java toolchain. This allows gradle to auto-provision JDK 25 on systems that only have JDK 8 installed for example.
-    toolchain.languageVersion.set(JavaLanguageVersion.of("${project.properties["java_version"]}"))
-    sourceCompatibility = JavaVersion.toVersion(project.properties["java_version"]!!)
+    toolchain.languageVersion.set(JavaLanguageVersion.of(getProperty("java_version")))
+    sourceCompatibility = JavaVersion.toVersion(getProperty("java_version"))
 }
 
 repositories {
@@ -41,18 +41,15 @@ repositories {
 }
 
 dependencies {
-    paperweight.paperDevBundle("${project.properties["minecraft_version"]}.build.+")
+    paperweight.paperDevBundle("${getProperty("minecraft_version")}.build.+")
 
-    compileOnly("org.projectlombok:lombok:${project.properties["lombok_version"]}")
-    annotationProcessor("org.projectlombok:lombok:${project.properties["lombok_version"]}")
-
-    api("io.lettuce:lettuce-core:${project.properties["lettuce_version"]}") {
+    api("io.lettuce:lettuce-core:${getProperty("lettuce_version")}") {
         // included in server
         exclude("io.netty")
     }
-    compileOnly("com.lishid:openinvplugin:${project.properties["openInv_version"]}")
-    compileOnly("de.greensurvivors:GreenSocket:+")
-    compileOnly("de.greensurvivors:Dienstmodus:+")
+    compileOnly("com.lishid:openinvplugin:${getProperty("openInv_version")}")
+    compileOnly("de.greensurvivors:GreenSocket:2.+")
+    compileOnly("de.greensurvivors:Dienstmodus:2.+")
 }
 
 // include the unfiltered resources
@@ -71,7 +68,7 @@ tasks {
         filteringCharset = Charsets.UTF_8.name() // We want UTF-8 for everything
 
         expand("project" to project,
-            "minecraft_version" to project.properties["minecraft_version"]!!)
+            "minecraft_version" to getProperty("minecraft_version"))
     }
 
     compileJava {
@@ -79,7 +76,7 @@ tasks {
 
         // Set the release flag. This configures what version bytecode the compiler will emit, as well as what JDK APIs are usable.
         // See https://openjdk.java.net/jeps/247 for more information.
-        options.release.set(JavaLanguageVersion.of("${project.properties["java_version"]}").asInt())
+        options.release.set(JavaLanguageVersion.of(getProperty("java_version")).asInt())
     }
 
     // disable in favour of shadowJar
@@ -132,4 +129,6 @@ publishing {
         from(components["shadow"])
     }
 }
+
+private fun getProperty(value: String): String = providers.gradleProperty(value).get()
 
