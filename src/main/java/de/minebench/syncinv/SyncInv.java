@@ -44,6 +44,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
@@ -164,9 +165,17 @@ public final class SyncInv extends JavaPlugin {
         // Plugin startup logic
         loadConfig();
 
-        playerDataFolder = getServer().getMinecraftVersion().startsWith("1.")
-                ? new File(getServer().getWorlds().get(0).getWorldFolder(), "playerdata")
-                : new File(new File(getServer().getWorlds().get(0).getWorldFolder(), "players"), "data");
+        if (getServer().getMinecraftVersion().startsWith("1.")) {
+            playerDataFolder = new File(getServer().getWorlds().get(0).getWorldFolder(), "playerdata");
+        } else {
+            try {
+                Method getLevelDirectory = getServer().getClass().getMethod("getLevelDirectory");
+                playerDataFolder = ((Path) getLevelDirectory.invoke(getServer())).resolve("players/data").toFile();
+            } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
+                throw new UnsupportedOperationException("Server with version " + getServer().getBukkitVersion() + " is not supported! (Can't get the player data folder)", e);
+            }
+        }
+        logDebug("Player data folder is at " + playerDataFolder.getPath());
 
         MethodHandle tempUUIDGetterHandle = null;
         try {
@@ -603,6 +612,9 @@ public final class SyncInv extends JavaPlugin {
 
         runSync(() -> {
             Player player = getServer().getPlayer(data.playerId());
+            File playerDat = getPlayerDataFile(data.playerId());
+            // Store original player file modification date to compare after save to catch error while saving as that's not thrown
+            long lastModification = playerDat.lastModified();
             boolean createdNewFile = false;
             if ((player == null || !player.isOnline()) && getMessenger().hasQuery(data.playerId())) {
                 long localLastSeen = getLastSeen(data.playerId(), true);
@@ -643,7 +655,7 @@ public final class SyncInv extends JavaPlugin {
                 logDebug("Could not apply data for player " + data.playerId() + " as he isn't online and "
                         + (getOpenInv() == null ? "this server doesn't have OpenInv installed!" : "never was online on this server before!"));
                 if (createdNewFile) {
-                    getPlayerDataFile(data.playerId()).delete();
+                    playerDat.delete();
                 }
                 return;
             }
@@ -880,11 +892,7 @@ public final class SyncInv extends JavaPlugin {
 
                 finished.run();
                 if (getOpenInv() != null && !player.isOnline()) {
-                    File playerDat = getPlayerDataFile(data.playerId());
-                    // Store original player file modification date to compare after save to catch error while saving as that's not thrown
-                    long lastModification = playerDat.lastModified();
-
-                    // Try to save data
+                    // Ensure data is saved
                     player.saveData();
 
                     // Check for temporary file
@@ -901,7 +909,6 @@ public final class SyncInv extends JavaPlugin {
                 setLastSeen(data.playerId(), data.lastSeen());
             } catch (Exception e) {
                 getLogger().log(Level.SEVERE, "Error while applying player data of " + player.getName() + "!", e);
-                File playerDat = getPlayerDataFile(data.playerId());
                 if (playerDat.exists()) {
                     if (createdNewFile) {
                         playerDat.delete();
